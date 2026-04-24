@@ -148,9 +148,18 @@ Three values, one per Terraform variable:
 
 ## Step 2: Install Terraform
 
-If you already have `terraform >= 1.5` skip this step.
+First, see whether you already have it:
 
-**macOS (Apple Silicon), direct binary install, no Homebrew:**
+```bash
+terraform version
+```
+
+If that prints `Terraform v1.5` or newer, skip ahead. Otherwise pick
+your platform below. Each option installs the official HashiCorp
+binary straight from <https://releases.hashicorp.com/terraform/> and
+does not require a package manager.
+
+### macOS (Apple Silicon, `darwin_arm64`)
 
 ```bash
 VERSION=1.14.9
@@ -160,19 +169,98 @@ curl -fsSL -O https://releases.hashicorp.com/terraform/${VERSION}/terraform_${VE
 shasum -a 256 -c --ignore-missing terraform_${VERSION}_SHA256SUMS
 unzip -q terraform_${VERSION}_darwin_arm64.zip
 mkdir -p ~/.local/bin && mv terraform ~/.local/bin/
-# Ensure ~/.local/bin is on your PATH, then:
+# Make sure ~/.local/bin is on your PATH, then:
 terraform version
 ```
 
-Replace `darwin_arm64` with `darwin_amd64` (Intel Mac) or `linux_amd64` as needed.
+### macOS (Intel, `darwin_amd64`)
+
+Same commands, but replace every `darwin_arm64` with `darwin_amd64`.
+
+### Linux (`linux_amd64`)
+
+```bash
+VERSION=1.14.9
+cd /tmp
+curl -fsSL -O https://releases.hashicorp.com/terraform/${VERSION}/terraform_${VERSION}_linux_amd64.zip
+curl -fsSL -O https://releases.hashicorp.com/terraform/${VERSION}/terraform_${VERSION}_SHA256SUMS
+sha256sum --ignore-missing -c terraform_${VERSION}_SHA256SUMS
+unzip -q terraform_${VERSION}_linux_amd64.zip
+sudo install -m 755 terraform /usr/local/bin/
+terraform version
+```
+
+For `arm64` Linux, replace `linux_amd64` with `linux_arm64`.
+
+### Windows
+
+The fastest path is `winget`:
+
+```powershell
+winget install HashiCorp.Terraform
+terraform version
+```
+
+For an offline or locked-down environment, download
+`terraform_1.14.9_windows_amd64.zip` from
+<https://releases.hashicorp.com/terraform/1.14.9/>, unzip to a folder
+of your choice (for example `C:\Tools\terraform\`), and add that
+folder to your **System Environment Variables > PATH**.
+
+### Verify
+
+Whatever path you took, confirm before moving on:
+
+```bash
+terraform version
+# Terraform v1.14.9
+# on darwin_arm64  (or your OS/arch)
+```
 
 ---
 
-## Step 3: Clone and configure
+## Step 3: Clone the repo and configure `terraform.tfvars`
+
+### 3.1 Clone
+
+You will need `git` on your machine (`git --version` to check; if not
+installed, grab it from <https://git-scm.com/downloads> or via
+your OS package manager).
 
 ```bash
 git clone https://github.com/neo4j-field/neo4j-aura-gcp-psc.git
 cd neo4j-aura-gcp-psc
+```
+
+### 3.2 What the template gives you
+
+```
+neo4j-aura-gcp-psc/
+├── main.tf                       wires the modules together
+├── variables.tf                  root input variables
+├── outputs.tf                    root outputs (PSC IP, connection status, RDP command)
+├── terraform.tfvars.example      copy to terraform.tfvars and fill in
+├── modules/
+│   ├── networking/               new VPC + firewall, or data-source lookup of an existing one
+│   ├── psc_endpoint/             reserved internal IP + PSC forwarding rule
+│   ├── dns/                      Cloud DNS response policy + apex and wildcard rules
+│   └── test_vm/                  optional Windows Server 2022 VM (Shielded VM, IAP-accessible)
+├── scripts/
+│   ├── validate.ps1              run on the Windows VM to verify DNS + TCP
+│   └── iap_rdp.sh                start an IAP RDP tunnel to the test VM
+├── screenshots/                  images embedded in this README
+└── prompts/                      design brief and iteration history
+```
+
+You will only edit `terraform.tfvars` in a normal setup. Everything in
+`modules/` is reusable and driven by the root variables.
+
+### 3.3 Create your variables file
+
+Never commit `terraform.tfvars` (it's already in `.gitignore`). Start
+from the example:
+
+```bash
 cp terraform.tfvars.example terraform.tfvars
 ```
 

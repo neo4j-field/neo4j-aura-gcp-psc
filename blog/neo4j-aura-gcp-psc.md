@@ -104,15 +104,45 @@ will return to Step 3 of the wizard in the final step of this guide.
 
 ## Step 2: Provision the consumer side with Terraform
 
-Clone the repo and copy the example variables file:
+### Install Terraform
+
+If you do not already have it, grab the official binary from
+<https://releases.hashicorp.com/terraform/1.14.9/>. HashiCorp ships
+signed zips for macOS (arm64 and amd64), Linux, and Windows. On
+macOS Apple Silicon, that is:
+
+```bash
+VERSION=1.14.9
+cd /tmp
+curl -fsSL -O https://releases.hashicorp.com/terraform/${VERSION}/terraform_${VERSION}_darwin_arm64.zip
+unzip -q terraform_${VERSION}_darwin_arm64.zip
+mkdir -p ~/.local/bin && mv terraform ~/.local/bin/
+terraform version
+```
+
+Linux users: swap `darwin_arm64` for `linux_amd64` and install to
+`/usr/local/bin`. Windows users: `winget install HashiCorp.Terraform`.
+The companion repository README has the full per-platform recipe and a
+checksum step for anyone who wants extra confidence in the download.
+
+### Clone the template
 
 ```bash
 git clone https://github.com/neo4j-field/neo4j-aura-gcp-psc.git
 cd neo4j-aura-gcp-psc
+```
+
+The root of the repo has `main.tf`, `variables.tf`, and `outputs.tf`
+that wire together four reusable modules under `modules/`. You will
+not normally edit those; you edit `terraform.tfvars`. Copy the
+example file, which is already shaped with comments explaining each
+knob:
+
+```bash
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Edit `terraform.tfvars`. Three values are required:
+Three values are required:
 
 ```hcl
 consumer_project_id      = "<your-consumer-project>"
