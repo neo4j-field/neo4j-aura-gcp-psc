@@ -60,20 +60,6 @@ module "dns" {
   psc_ip_address       = module.psc_endpoint.psc_ip_address
 }
 
-module "test_vm_linux" {
-  count  = var.enable_linux_test_vm ? 1 : 0
-  source = "./modules/test_vm_linux"
-
-  project_id        = var.consumer_project_id
-  zone              = var.consumer_zone
-  vm_name           = var.linux_vm_name
-  machine_type      = var.linux_vm_machine_type
-  network_self_link = module.networking.network_self_link
-  subnet_self_link  = module.networking.subnetwork_self_link
-  enable_public_ip  = var.linux_vm_public_ip
-  common_labels     = local.common_labels
-}
-
 module "test_vm_windows" {
   count  = var.enable_windows_browser_vm ? 1 : 0
   source = "./modules/test_vm_windows"

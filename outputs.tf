@@ -24,40 +24,6 @@ output "dns_wildcard_name" {
 }
 
 # ---------------------------------------------------------------------------
-# Linux test VM (default)
-# ---------------------------------------------------------------------------
-
-output "linux_vm_name" {
-  description = "Name of the Linux test VM (null when enable_linux_test_vm = false)."
-  value       = var.enable_linux_test_vm ? module.test_vm_linux[0].instance_name : null
-}
-
-output "linux_vm_zone" {
-  description = "Zone of the Linux test VM (null when enable_linux_test_vm = false)."
-  value       = var.enable_linux_test_vm ? module.test_vm_linux[0].zone : null
-}
-
-output "linux_vm_internal_ip" {
-  description = "Internal IP of the Linux test VM (null when enable_linux_test_vm = false)."
-  value       = var.enable_linux_test_vm ? module.test_vm_linux[0].internal_ip : null
-}
-
-output "linux_vm_public_ip" {
-  description = "External IP of the Linux test VM (null when no public IP is attached)."
-  value       = var.enable_linux_test_vm ? module.test_vm_linux[0].public_ip : null
-}
-
-output "iap_ssh_command" {
-  description = "Ready-to-run gcloud command to open an IAP SSH session to the Linux test VM."
-  value = var.enable_linux_test_vm ? format(
-    "gcloud compute ssh %s --tunnel-through-iap --zone=%s --project=%s",
-    module.test_vm_linux[0].instance_name,
-    var.consumer_zone,
-    var.consumer_project_id,
-  ) : null
-}
-
-# ---------------------------------------------------------------------------
 # Windows browser VM (optional)
 # ---------------------------------------------------------------------------
 
@@ -112,24 +78,22 @@ output "next_steps" {
        If it shows PENDING, re-check the consumer project ID on the Aura side:
            ${var.consumer_project_id}
 
-    2. (Optional but recommended) Run a GCP Connectivity Test:
-       Network Intelligence > Connectivity Tests > Create. Source = the Linux test
-       VM, destination = the PSC endpoint, protocol tcp, port 7687. A "Reachable"
-       result on both the forward and return traces proves the routed path.
+    2. (Recommended) Run a GCP Connectivity Test to prove the PSC path:
+       Network Intelligence > Connectivity Tests > Create. Source = any reachable
+       source in the same VPC (a one-off test VM works), destination = the PSC
+       endpoint, protocol tcp, port 7687. A "Reachable" result on both the forward
+       and return traces confirms the routed path.
 
-    3. SSH into the Linux test VM via IAP and run scripts/validate.sh to verify DNS
-       resolution and TCP reachability on 443, 7687, 7474, 8491:
-           ${var.enable_linux_test_vm ? "gcloud compute ssh ${var.linux_vm_name} --tunnel-through-iap --zone=${var.consumer_zone} --project=${var.consumer_project_id}" : "(Linux VM disabled; re-run terraform apply with enable_linux_test_vm = true to create one)"}
+    3. (Optional) Only if you want to exercise the Neo4j Browser UI over the
+       private URI: set enable_windows_browser_vm = true in terraform.tfvars and
+       re-apply, then RDP into the Windows VM.
 
-    4. (Optional) Only if you want to test Neo4j Browser UI: set enable_windows_browser_vm
-       = true in terraform.tfvars and re-apply, then RDP into the Windows VM.
-
-    5. After step 3 (and optionally step 4) passes, open the Aura network access
+    4. After step 2 (and optionally step 3) passes, open the Aura network access
        wizard in the console, walk through to Step 3 of 3, check "Disable public
        traffic", and save. From that point on, only the PSC path reaches the
        instance.
 
-    6. If producer and consumer regions differ, cross-region PSC requires Premium
+    5. If producer and consumer regions differ, cross-region PSC requires Premium
        Tier networking. For same-region setups (both in ${var.consumer_region})
        Premium Tier is not required.
 

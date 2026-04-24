@@ -28,7 +28,9 @@ Two sides, two operators:
 
 **Five resources** land in the consumer project: a static internal IP, a
 PSC forwarding rule, a Cloud DNS response policy, and two response-policy
-rules (apex and wildcard). Plus the optional Windows VM when `enable_test_vm = true`.
+rules (apex and wildcard). Plus an optional Windows VM when
+`enable_windows_browser_vm = true`, for users who want to click through
+the Neo4j Browser UI over the private URI.
 
 ---
 
@@ -40,18 +42,16 @@ rules (apex and wildcard). Plus the optional Windows VM when `enable_test_vm = t
 - `terraform >= 1.5`
 - A running **Neo4j Aura VDC** instance
 - A **consumer GCP project** with the IAM permissions listed below
-- A Windows RDP client (Microsoft Remote Desktop on macOS, `mstsc` on Windows)
+- *(Optional)* A Windows RDP client (Microsoft Remote Desktop on macOS, `mstsc` on Windows) — only needed if you enable the Windows browser VM in Step 7
 
 ### IAM on the consumer project
 
 The identity running Terraform needs at minimum:
 
 - `roles/compute.networkAdmin` (addresses, forwarding rules, firewall if `create_network = true`)
-- `roles/compute.instanceAdmin.v1` (test VM)
 - `roles/dns.admin` (response policy and rules)
-- `roles/iam.serviceAccountUser` (attach the default compute SA to the VM)
-- `roles/iap.tunnelResourceAccessor` (for users who RDP via IAP)
-- `roles/networkmanagement.admin` (Connectivity Tests in step 6, optional)
+- `roles/networkmanagement.admin` (Connectivity Tests in step 6, recommended)
+- *(Only if you enable the Windows browser VM)* `roles/compute.instanceAdmin.v1`, `roles/iam.serviceAccountUser`, and `roles/iap.tunnelResourceAccessor`
 
 ---
 
@@ -331,14 +331,10 @@ neo4j-aura-gcp-psc/
 │   ├── networking/               new VPC + firewall, or data-source lookup of an existing one
 │   ├── psc_endpoint/             reserved internal IP + PSC forwarding rule
 │   ├── dns/                      Cloud DNS response policy + apex and wildcard rules
-│   ├── test_vm_linux/            small Debian 12 VM for DNS + TCP validation (default)
 │   └── test_vm_windows/          optional Windows Server 2022 VM for Neo4j Browser UI
 ├── scripts/
-│   ├── validate.sh               run on the Linux VM to verify DNS + TCP
 │   ├── validate.ps1              run on the Windows VM to verify DNS + TCP
-│   ├── iap_ssh.sh                start an IAP SSH session to the Linux VM
-│   ├── iap_rdp.sh                start an IAP RDP tunnel to the Windows VM
-│   └── local_tunnel.sh           forward Bolt/Browser from laptop through the Linux VM
+│   └── iap_rdp.sh                start an IAP RDP tunnel to the Windows VM
 ├── screenshots/                  images embedded in this README
 └── prompts/                      design brief and iteration history
 ```
@@ -376,20 +372,17 @@ create_network        = false
 existing_network_name = "default"
 existing_subnet_name  = "default"
 
-# Linux test VM (default). Tiny Debian 12 e2-micro box for DNS + TCP validation.
-enable_linux_test_vm  = true
-linux_vm_public_ip    = true          # SSH conveniently; set false for IAP-only
-
-# Windows browser VM (optional). Enable only if you want to click through
-# the Neo4j Browser UI over the private URI.
+# Windows browser VM. Optional and disabled by default. Turn this on only if
+# you want to click through the Neo4j Browser UI from inside the VPC; the
+# GCP Connectivity Test alone is enough to validate the PSC path.
 enable_windows_browser_vm = false
 windows_vm_public_ip      = false     # IAP RDP is safer than a public 3389
 ```
 
-> The **Linux** VM is the default testing path: small, cheap, and boots in
-> seconds. The **Windows** VM is optional and only makes sense if you want
-> to see Neo4j Browser's web UI from inside the VPC. You can enable both
-> at once if you want, but most people don't need to.
+> The default deployment ships only the network plumbing (PSC endpoint,
+> DNS response policy) and validates end-to-end with a GCP Connectivity
+> Test. Flip `enable_windows_browser_vm = true` only if you need Neo4j
+> Browser's web UI from inside the VPC.
 
 ---
 
@@ -401,17 +394,14 @@ terraform plan -out=tfplan.binary
 terraform apply tfplan.binary
 ```
 
-Expected run time: ~30 seconds (just a minute or two longer if you
-enable the Windows browser VM). Key outputs to watch for after apply:
+Expected run time: ~30 seconds (a minute or two longer if you enable
+the Windows browser VM). Key outputs to watch for after apply:
 
 ```
 psc_endpoint_ip          = "10.128.0.50"
 psc_connection_status    = "ACCEPTED"
 psc_forwarding_rule_id   = "projects/<project>/regions/us-central1/forwardingRules/neo4j-psc-endpoint"
 dns_wildcard_name        = "*.production-orch-NNNN.neo4j.io."
-linux_vm_name            = "neo4j-test-vm-linux"
-linux_vm_zone            = "us-central1-a"
-iap_ssh_command          = "gcloud compute ssh neo4j-test-vm-linux --tunnel-through-iap ..."
 ```
 
 Confirm the same thing from the GCP Console side: **Network services >
@@ -426,20 +416,25 @@ exactly.
 
 ---
 
-## Step 6: (Optional) Validate with a GCP Connectivity Test
+## Step 6: Validate with a GCP Connectivity Test
 
-Before logging into the VM, you can prove the PSC path is reachable
-from the GCP side using a Connectivity Test. This exercises the same
-forwarding-rule, subnet-route, and firewall-rule hops a real client
-traverses, without needing to RDP in.
+This is the primary validation for the setup. A Connectivity Test
+exercises the same forwarding-rule, subnet-route, and firewall-rule
+hops a real client traverses and returns a reachability report, all
+from the GCP Console without needing a VM.
 
 In the GCP Console, open **Network Intelligence > Connectivity Tests**
 and click **Create Connectivity Test**. Fill in:
 
 - **Test name**: `neo4j-psc-endpoint-test`
 - **Protocol**: `tcp`
-- **Source**: VM instance `neo4j-test-vm-linux` (source IP auto-fills from the VM's NIC)
-- **Destination**: PSC endpoint `neo4j-psc-endpoint` (10.128.0.50)
+- **Source**: any reachable source in the consumer VPC. The simplest
+  option is **IP address**, pointing at a spare internal IP in the
+  consumer subnet. If you are running the optional Windows browser VM
+  (Step 7), you can pick the VM instance instead and the source IP
+  auto-fills from its NIC.
+- **Destination**: PSC endpoint `neo4j-psc-endpoint` (the
+  `psc_endpoint_ip` from `terraform output`, for example `10.128.0.50`)
 - **Destination port**: `443`
 
 ![Create Connectivity Test form with source and destination filled in](screenshots/09-gcp-connectivity-test-create.png)
@@ -452,145 +447,17 @@ subnet route, and the PSC forwarding rule:
 
 ![Connectivity Test results showing 50/50 packets delivered and reachable in both directions](screenshots/10-gcp-connectivity-test-result.jpg)
 
-You can repeat this for ports 7687, 7474, and 8491 by editing the
-destination port. A failure here points at a routing or firewall issue
-and is easier to diagnose than one reported from inside the VM.
+Repeat for ports 7687, 7474, and 8491 by editing the destination port.
+A failure here points at a routing or firewall issue and is easier to
+diagnose than one reported from inside a VM.
 
 ---
 
-## Step 7: SSH into the Linux test VM
+## Step 7: (Optional) Connect via Neo4j Browser
 
-Use IAP SSH (no public IP needed) through `gcloud`:
-
-```bash
-$(terraform output -raw iap_ssh_command)
-```
-
-Or if you left `linux_vm_public_ip = true`, SSH directly:
-
-```bash
-ssh "$(whoami)@$(terraform output -raw linux_vm_public_ip)"
-```
-
-The repo ships a wrapper at `scripts/iap_ssh.sh` that reads values
-from `terraform output` and opens the IAP tunnel for you.
-
-> Skipping the Linux VM because you only care about the GCP-side
-> Connectivity Test in step 6 is a valid choice. Set `enable_linux_test_vm = false`
-> and re-apply.
-
----
-
-## Step 8: Validate the PSC private path from the VM
-
-From the Linux VM, copy `scripts/validate.sh` across and run it. The
-cleanest way is to paste the script inline, but `gcloud compute scp`
-works too:
-
-```bash
-gcloud compute scp scripts/validate.sh \
-  neo4j-test-vm-linux:~/validate.sh \
-  --tunnel-through-iap --zone=us-central1-a --project=<your project>
-
-gcloud compute ssh neo4j-test-vm-linux --tunnel-through-iap \
-  --zone=us-central1-a --project=<your project> \
-  --command='bash ~/validate.sh <dbid>.production-orch-NNNN.neo4j.io 10.128.0.50'
-```
-
-The script uses only bash built-ins (`/dev/tcp` for port probes,
-`getent` or `dig` for DNS), so no extra packages are required on a
-minimal Debian image. Expected output:
-
-```
-Neo4j PSC connectivity check
-============================
-Host       : <dbid>.production-orch-NNNN.neo4j.io
-Expected IP: 10.128.0.50
-DNS answer : 10.128.0.50
-DNS        : PASS
-TCP 443  : PASS
-TCP 7687 : PASS
-TCP 7474 : PASS
-TCP 8491 : PASS      (or FAIL if GDS isn't enabled; fine)
-
-RESULT: PASS
-```
-
-Exit code 0 on success, 1 on failure. Port 8491 (Graph Analytics) is
-treated as optional and does not fail the run.
-
-### Windows alternative
-
-If you chose `enable_windows_browser_vm = true`, run `scripts/validate.ps1`
-on the Windows VM instead (PowerShell `Test-NetConnection` and
-`Resolve-DnsName`):
-
-```powershell
-C:\Users\Public\validate.ps1 -Neo4jHost "<dbid>.production-orch-NNNN.neo4j.io" -ExpectedPscIp "10.128.0.50"
-```
-
-### Test from your local desktop through an SSH tunnel
-
-You can also hit the private path from your laptop without a GUI
-anywhere, using an SSH tunnel through the Linux VM. The VM resolves
-the Aura hostname through the VPC-scoped Cloud DNS response policy,
-so from your laptop you are effectively reaching PSC.
-
-The flow:
-
-```
-laptop:7687  <-- ssh -L -->  vm  <-- PSC -->  aura:7687
-                              ^
-                              resolves <host> via the VPC response policy
-```
-
-**One-time:** add the Aura private hostname to your laptop's hosts
-file so TLS cert validation works. The driver will send SNI for the
-Aura hostname, and Aura's wildcard cert covers
-`*.production-orch-NNNN.neo4j.io`, so as long as the hostname in the
-URI matches the hosts entry, TLS succeeds.
-
-- macOS / Linux: `sudo vi /etc/hosts`
-- Windows: open `C:\Windows\System32\drivers\etc\hosts` as Administrator
-
-Add:
-
-```
-127.0.0.1  <dbid>.production-orch-NNNN.neo4j.io
-```
-
-**Open the tunnel** (from the repo root, where `terraform output` works):
-
-```bash
-./scripts/local_tunnel.sh <dbid>.production-orch-NNNN.neo4j.io
-```
-
-This forwards local `7687` → Bolt and local `7474` → Browser HTTP
-through the Linux VM. Leave it running.
-
-**In a second terminal, connect with cypher-shell:**
-
-```bash
-cypher-shell -a neo4j+s://<dbid>.production-orch-NNNN.neo4j.io:7687 \
-  -u neo4j
-# paste the Aura password when prompted
-```
-
-Or from any Bolt driver (Python, Java, JavaScript) using the same
-URI. A successful `RETURN 1;` confirms the path end-to-end from your
-laptop through PSC.
-
-**When you're done**, Ctrl+C the tunnel and remove the hosts-file
-line. Leaving the line in place will make the hostname fail to
-resolve later (`127.0.0.1` with no tunnel listening).
-
----
-
-## Step 9: (Optional) Connect via Neo4j Browser
-
-The DNS + TCP validation in step 8 already proves the path works, but
-if you want to click through the instance yourself, flip the Windows
-VM on:
+The Connectivity Test in Step 6 already proves the path works, but if
+you want to click through the instance yourself, flip the Windows VM
+on:
 
 ```hcl
 # terraform.tfvars
@@ -636,10 +503,10 @@ traffic flows through PSC, not the public internet.
 
 ---
 
-## Step 10: Finish the Aura wizard (disable public traffic)
+## Step 8: Finish the Aura wizard (disable public traffic)
 
-Now that the private path is validated (step 8, plus optionally
-step 9), return to the Aura Console and reopen
+Now that the private path is validated (step 6, plus optionally
+step 7), return to the Aura Console and reopen
 **Project > Settings > Private endpoints**, which takes you back into
 the same three-step wizard from step 2. Click through to
 **Step 3 of 3**, check **Disable public traffic**, tick the VPN
@@ -651,7 +518,7 @@ From this point on, every client on the internet will be refused and
 the only way into the instance is through the PSC path you just
 built.
 
-If you flip **Disable public traffic** before step 8 passes, you lose
+If you flip **Disable public traffic** before step 6 passes, you lose
 all access to the instance from anywhere outside the consumer VPC.
 Re-enable it from the wizard to recover if that happens.
 
@@ -666,10 +533,9 @@ Re-enable it from the wizard to recover if that happens.
 | `Test-NetConnection` on 7687 fails, DNS is correct | Connection not yet `ACCEPTED`, or Premium Tier not enabled for a cross-region setup.                            |
 | `terraform apply` fails on the forwarding rule     | Service attachment URI is wrong, region mismatched, or consumer project not yet on the Aura allowlist.          |
 | RDP tunnel fails with `permission denied`          | Missing `roles/iap.tunnelResourceAccessor` on the user.                                                         |
-| Lost access after disabling public traffic         | Reopen the Aura wizard, uncheck **Disable public traffic**, re-run step 8 to validate the private path, then re-enable.                                                          |
-| Linux `validate.sh` reports `DNS FAIL` and DNS answer is blank | `getent` can't resolve. Check that the VM actually sits in the VPC the DNS response policy is attached to; re-apply if `create_network` was flipped between runs.               |
+| Lost access after disabling public traffic         | Reopen the Aura wizard, uncheck **Disable public traffic**, re-run step 6 to validate the private path, then re-enable.                                                          |
 | Neo4j Browser: certificate hostname mismatch       | You connected to the public URI. Use the **Private URI** `<dbid>.production-orch-NNNN.neo4j.io`.                |
-| GCP Connectivity Test returns Unreachable          | Check the forwarding rule status in the GCP Console, and verify the test's source VM is in the same VPC as the PSC endpoint. |
+| GCP Connectivity Test returns Unreachable          | Check the forwarding rule status in the GCP Console, and verify the test's source IP or VM is in the same VPC as the PSC endpoint.                                              |
 
 ---
 
@@ -699,10 +565,10 @@ neo4j-aura-gcp-psc/
 │   ├── networking/              VPC + subnet + firewall, or data-source lookup
 │   ├── psc_endpoint/            static IP + PSC forwarding rule
 │   ├── dns/                     response policy + apex and wildcard A records
-│   └── test_vm/                 Windows Server 2022 VM, Shielded VM
+│   └── test_vm_windows/         optional Windows Server 2022 Shielded VM for Neo4j Browser UI
 ├── scripts/
 │   ├── validate.ps1             run on the Windows VM to verify connectivity
-│   └── iap_rdp.sh               start an IAP RDP tunnel to the test VM
+│   └── iap_rdp.sh               start an IAP RDP tunnel to the Windows VM
 ├── prompts/                     design brief, iteration notes, final spec
 └── screenshots/                 images referenced in this guide
 ```
@@ -727,10 +593,11 @@ neo4j-aura-gcp-psc/
 - **Static internal IP for the PSC endpoint.** The IP is the DNS answer;
   reserving it keeps the DNS record stable across forwarding rule
   recreations.
-- **Shielded VM on the test instance.** Secure boot, vTPM, and integrity
-  monitoring are on by default.
-- **`enable_test_vm` and `enable_vm_public_ip` flags.** Keep the test
-  surface out of production, and force IAP-only access where needed.
+- **Shielded VM on the optional Windows test instance.** Secure boot,
+  vTPM, and integrity monitoring are on by default.
+- **`enable_windows_browser_vm` and `windows_vm_public_ip` flags.** Keep
+  the test surface out of production; default is no VM at all. When the
+  VM is on, force IAP-only access (`windows_vm_public_ip = false`).
 
 ### Related docs
 

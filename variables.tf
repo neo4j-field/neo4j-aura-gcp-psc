@@ -94,43 +94,13 @@ variable "psc_endpoint_name" {
 }
 
 # ---------------------------------------------------------------------------
-# Linux test VM (default). A small Debian 12 client used to validate DNS and
-# TCP reachability to the PSC endpoint. e2-micro is free-tier eligible in
-# some regions and plenty for a network-test workload.
-# ---------------------------------------------------------------------------
-
-variable "enable_linux_test_vm" {
-  description = "Whether to provision the Linux test VM. Default true. Turn this off alongside enable_windows_browser_vm = false for a production-only deploy with no VM surface."
-  type        = bool
-  default     = true
-}
-
-variable "linux_vm_name" {
-  description = "Name of the Linux test VM."
-  type        = string
-  default     = "neo4j-test-vm-linux"
-}
-
-variable "linux_vm_machine_type" {
-  description = "Machine type for the Linux test VM."
-  type        = string
-  default     = "e2-micro"
-}
-
-variable "linux_vm_public_ip" {
-  description = "When true, attach an ephemeral external IP to the Linux test VM. SSH is key-based via OS Login so the risk is lower than Windows RDP, but for locked-down VPCs prefer IAP-only (set this false)."
-  type        = bool
-  default     = true
-}
-
-# ---------------------------------------------------------------------------
 # Windows browser VM (optional). Only needed if you want to click through
 # the Neo4j Browser UI over the private URI. Adds Microsoft licensing
 # cost and boot time; skip unless you actually need the UI.
 # ---------------------------------------------------------------------------
 
 variable "enable_windows_browser_vm" {
-  description = "Whether to provision a Windows Server 2022 VM for browsing Neo4j via the Browser UI. Default false. Only enable if you need the web UI; the Linux VM covers networking validation."
+  description = "Whether to provision a Windows Server 2022 VM for browsing Neo4j via the Browser UI. Default false. The GCP Connectivity Test alone is sufficient to validate the PSC path; only turn this on if you need the Browser UI."
   type        = bool
   default     = false
 }

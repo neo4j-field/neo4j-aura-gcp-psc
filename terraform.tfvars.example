@@ -34,20 +34,11 @@ psc_ip_name       = "neo4j-psc-ip"
 psc_endpoint_name = "neo4j-psc-endpoint"
 
 # ---------------------------------------------------------------------------
-# Linux test VM (default). A tiny Debian 12 e2-micro client used to validate
-# DNS resolution and TCP reachability to the PSC endpoint. Cheap and fast.
-# Disable with enable_linux_test_vm = false if you only want the GCP
-# Connectivity Test as your proof, or if the deploy is production-only.
-# ---------------------------------------------------------------------------
-enable_linux_test_vm  = true
-linux_vm_name         = "neo4j-test-vm-linux"
-linux_vm_machine_type = "e2-micro"
-linux_vm_public_ip    = true
-
-# ---------------------------------------------------------------------------
-# Windows browser VM (optional). Enable only if you want to click through
-# the Neo4j Browser UI from inside the VPC. Adds Microsoft licensing cost
-# and boot time; the Linux VM alone is sufficient to validate PSC.
+# Windows browser VM (optional, disabled by default). Enable only if you
+# want to click through the Neo4j Browser UI from inside the VPC. The GCP
+# Connectivity Test alone is sufficient to validate the PSC path; this VM
+# adds Microsoft licensing cost and boot time, so leave it off unless you
+# specifically need the web UI.
 # ---------------------------------------------------------------------------
 enable_windows_browser_vm = false
 windows_vm_name           = "neo4j-test-vm-win"
