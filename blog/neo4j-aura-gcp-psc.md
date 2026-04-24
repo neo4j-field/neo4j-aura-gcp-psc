@@ -32,11 +32,11 @@ has the Terraform and scripts that go with it:
 ## The picture
 
 ```
-          Consumer project (us-central1)               Producer project (us-central1)
+          Consumer project                             Producer project
           +---------------------------------+          +------------------------------+
-          | Existing "default" VPC          |   PSC    | Neo4j Aura VDC               |
+          | Consumer VPC                    |   PSC    | Neo4j Aura VDC               |
           |  +---------------------------+  |  (GCP    |  +------------------------+  |
-          |  | default subnet            |  | backbone)|  | Service attachment     |  |
+          |  | Consumer subnet           |  | backbone)|  | Service attachment     |  |
           |  |                           |  | <======> |  | db-ingress-private     |  |
           |  |  PSC endpoint             |  |          |  |                        |  |
           |  +---------------------------+  |          |  +------------------------+  |
