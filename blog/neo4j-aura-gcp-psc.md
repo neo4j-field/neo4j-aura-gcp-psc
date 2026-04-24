@@ -75,27 +75,91 @@ prove the path works end to end.
 
 ## Step 1: Allowlist your consumer project in the Aura Console
 
-In the Aura Console, open your instance, go to **Network access
-configuration**, and click **Edit**. In step 1 of the wizard, under
-**Target GCP Project ID's**, add the consumer project ID you will use
-with Terraform.
+Before you run any Terraform, two things happen in the Aura Console.
+You give Aura permission to accept a PSC connection from your consumer
+project, and you collect the two identifiers Terraform will need in
+step 3.
+
+### 1.1 Open the network access wizard
+
+Log into the Aura Console at <https://console.neo4j.io>, click the
+instance tile for the database you are securing, and look for
+**Network access configuration**. Click **Edit** to open the
+three-step wizard.
+
+### 1.2 Step 1 of 3, Instance Type and Target GCP Project ID's
+
+Pick the **Instance Type** that matches the instance you are
+securing (for example, AuraDB Professional, Enterprise, or Business
+Critical). Under **Target GCP Project ID's**, click **Add project ID**
+and type the GCP project ID where Terraform will run. This is the
+consumer project ID, not the Aura producer project.
 
 ![Aura Console network access configuration with the consumer project ID added](../screenshots/01-aura-network-access-config.jpg)
 
-The string you enter here is the gate. Aura compares it against the
-`projects/<id>/...` path on the inbound PSC connection. If they do not
-match exactly, the connection stays in `PENDING` forever.
+Aura compares this exact string against the `projects/<id>/...` path
+on the inbound PSC connection. A typo or a trailing space here means
+the Terraform-created endpoint will sit at `PENDING` indefinitely, so
+double-check it. If you see an amber **All regions configured** banner,
+that is informational: it means regions were set on a previous pass
+and you are in edit mode. Click **Next**.
 
-Complete steps 2 and 3 of the wizard (region and review), then grab
-two values from the instance tile. You will need both shortly:
+### 1.3 Step 2 of 3, Region
 
-- The **Private Link service name**, which is the PSC service
-  attachment URI. It looks like
-  `https://www.googleapis.com/compute/v1/projects/<aura-project>/regions/<region>/serviceAttachments/<name>`.
-- The **orchestrator subdomain**, which is the middle segment of the
-  instance's private URI. For example, from
-  `c466fb81.production-orch-0792.neo4j.io` you want
-  `production-orch-0792`.
+Confirm the region where your Aura instance lives. Aura displays each
+region already configured for the instance type you picked; nothing
+usually needs to change here. Click **Next**.
+
+### 1.4 Step 3 of 3, Review and save
+
+Review the summary and click **Save** (or **Finish**). The wizard
+closes and you land back on the instance page.
+
+### 1.5 Collect the two Terraform inputs from the instance page
+
+After saving, the instance page shows two PSC-specific values. You
+will paste both into `terraform.tfvars` in step 3.
+
+- **Private Link service name**, which is the underlying GCP service
+  attachment URI. For GCP Aura, this points at a shared Neo4j ingress
+  project in the same region as your instance and looks like this:
+
+  ```
+  https://www.googleapis.com/compute/v1/projects/<aura-ingress-project>/regions/<aura-region>/serviceAttachments/<name>
+  ```
+
+  A concrete example for `us-central1` is
+  `https://www.googleapis.com/compute/v1/projects/ni-production-rd1p/regions/us-central1/serviceAttachments/db-ingress-private`.
+  Copy the value the console shows verbatim. The Terraform project
+  accepts both the full `https://www.googleapis.com/...` form and the
+  shortened `projects/.../serviceAttachments/...` form.
+
+- **Orchestrator subdomain**, which is the middle segment of the
+  instance's **Private URI**. The Private URI is a hostname of the
+  form:
+
+  ```
+  <dbid>.production-orch-NNNN.neo4j.io
+  ```
+
+  For example, `c466fb81.production-orch-0792.neo4j.io` breaks into
+  three parts: `c466fb81` is your instance ID, `production-orch-0792`
+  is the orchestrator subdomain (this is what Terraform needs),
+  and `neo4j.io` is the public suffix. Copy only the middle segment.
+  Terraform will build the wildcard DNS override
+  `*.production-orch-0792.neo4j.io` from it.
+
+  If the console is showing a **Connection URI** that looks like
+  `neo4j+s://<dbid>.databases.neo4j.io`, that is the public URI and
+  not what you want. The Private URI only appears once Private Link
+  is enabled on the instance; if you do not see it, close the
+  instance page and reopen it after saving the wizard.
+
+You should now have three things written down:
+
+1. Your consumer GCP project ID (the string you typed into **Target GCP Project ID's**).
+2. The Private Link service name (the long `https://www.googleapis.com/...` URL).
+3. The orchestrator subdomain (`production-orch-NNNN`).
 
 ## Step 2: Provision the consumer side with Terraform
 

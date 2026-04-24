@@ -66,27 +66,89 @@ The identity running Terraform needs at minimum:
 
 ## Step 1: Allowlist your consumer project in the Aura Console
 
-In the Aura Console, open **your instance > Network access configuration >
-Edit**. In step 1 of 3, under **Target GCP Project ID's**, add your
-consumer GCP project ID and click **Add project ID**.
+Two things happen here: you allowlist the consumer project so Aura
+will accept the inbound PSC connection, and you collect the two
+identifiers Terraform needs later.
+
+### 1.1 Open the network access wizard
+
+In the Aura Console (<https://console.neo4j.io>), click your instance
+tile, then **Network access configuration > Edit**. A three-step
+wizard opens.
+
+### 1.2 Step 1 of 3: Instance Type and Target GCP Project ID's
+
+- **Instance Type**: pick the type of the instance you are securing
+  (AuraDB Professional, Enterprise, Business Critical, and so on).
+- **Target GCP Project ID's**: click **Add project ID** and enter the
+  GCP project ID where you will run Terraform (the consumer project,
+  not the Aura producer project).
 
 ![Aura network access configuration with consumer project ID added](screenshots/01-aura-network-access-config.jpg)
 
-Complete steps 2 and 3 of the wizard (region and review).
+**Critical**: this string must match `consumer_project_id` in
+`terraform.tfvars` exactly. If the strings differ, Terraform will
+create the forwarding rule but `psc_connection_status` will stay on
+`PENDING` until corrected.
 
-**Critical**: the string you enter here must match the `consumer_project_id`
-you'll set in `terraform.tfvars` in step 3. Aura matches the inbound PSC
-connection against this allowlist; if the strings don't match, the
-connection stays `PENDING` indefinitely.
+Click **Next**.
 
-Now go to your instance tile and note two values for later:
+### 1.3 Step 2 of 3: Region
 
-1. **Private Link service name** (the PSC service attachment URI). Format:
-   ```
-   https://www.googleapis.com/compute/v1/projects/<aura-project>/regions/<region>/serviceAttachments/<name>
-   ```
-2. **Orchestrator subdomain** from the Private URI `<dbid>.production-orch-NNNN.neo4j.io`.
-   You want the middle segment, for example `production-orch-0792`.
+Confirm the region where your Aura instance lives. If the wizard
+shows "All regions configured" this is informational; the regions
+are already set and you can just move forward. Click **Next**.
+
+### 1.4 Step 3 of 3: Review and save
+
+Review the summary and click **Save**. The wizard closes and you
+return to the instance page.
+
+### 1.5 Collect the two Terraform inputs from the instance page
+
+After saving, the instance page surfaces the two PSC-specific values
+you will paste into `terraform.tfvars` in step 3:
+
+- **Private Link service name** (the PSC service attachment URI).
+  Looks like:
+
+  ```
+  https://www.googleapis.com/compute/v1/projects/<aura-ingress-project>/regions/<aura-region>/serviceAttachments/<name>
+  ```
+
+  A real example for `us-central1` is
+  `https://www.googleapis.com/compute/v1/projects/ni-production-rd1p/regions/us-central1/serviceAttachments/db-ingress-private`.
+  This points at a shared Neo4j-owned ingress attachment in the same
+  region as your instance. Copy the value the console shows verbatim.
+  Terraform accepts either the full `https://www.googleapis.com/...`
+  form or the shortened `projects/.../serviceAttachments/...` form.
+
+- **Orchestrator subdomain**, which is the middle segment of the
+  instance's **Private URI**. The Private URI is shown as a full
+  hostname like `c466fb81.production-orch-0792.neo4j.io`, which
+  breaks into three parts:
+
+  - `c466fb81` — the instance ID (not needed here).
+  - `production-orch-0792` — the orchestrator subdomain (this is the
+    value you need for `neo4j_orch_subdomain`).
+  - `neo4j.io` — the public suffix.
+
+  Copy only the middle segment. Terraform will build the full
+  wildcard DNS override (`*.production-orch-0792.neo4j.io`) from it.
+
+  If the console is showing a **Connection URI** like
+  `neo4j+s://<dbid>.databases.neo4j.io`, that is the *public* URI,
+  not what you want. The Private URI only appears after Private Link
+  is enabled on the instance; if you do not see it, refresh the
+  instance page.
+
+You should end this step with three values written down:
+
+| What                                 | Where it came from                       | Terraform variable          |
+| ------------------------------------ | ---------------------------------------- | --------------------------- |
+| Consumer GCP project ID              | You typed it into **Target GCP Project ID's** | `consumer_project_id`       |
+| Private Link service name            | Instance page, under Private Link        | `neo4j_service_attachment`  |
+| Orchestrator subdomain               | Middle segment of the Private URI        | `neo4j_orch_subdomain`      |
 
 ---
 
