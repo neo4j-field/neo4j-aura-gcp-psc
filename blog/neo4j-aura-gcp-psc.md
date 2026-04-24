@@ -160,14 +160,19 @@ existing_network_name = "default"
 existing_subnet_name  = "default"
 ```
 
-Under the hood, Terraform splits the work across four modules.
-`networking` either creates new VPC resources or looks up existing ones
-by name. `psc_endpoint` reserves a static internal IP with
+Under the hood, Terraform splits the work across five modules.
+`networking` either creates new VPC resources or looks up existing
+ones by name. `psc_endpoint` reserves a static internal IP with
 `purpose = GCE_ENDPOINT` and then a forwarding rule with
 `load_balancing_scheme = ""` targeting the Aura service attachment.
-`dns` attaches a response policy to the VPC and creates two local-data
-rules, one for the wildcard and one for the apex. `test_vm` optionally
-creates a Windows Server 2022 Shielded VM for validation.
+`dns` attaches a response policy to the VPC and creates two
+local-data rules, one for the wildcard and one for the apex.
+`test_vm_linux` drops in a tiny Debian 12 `e2-micro` client for
+validation (you will rarely need anything bigger). `test_vm_windows`
+is the opt-in Windows Server 2022 box you turn on only if you want
+to click through Neo4j Browser's web UI from inside the VPC. For a
+first deployment, the default settings are what you want:
+`enable_linux_test_vm = true`, `enable_windows_browser_vm = false`.
 
 ## Step 3: Apply and confirm the connection
 
@@ -194,15 +199,15 @@ You can confirm the same thing from the GCP Console side under
 
 ![GCP Console showing the PSC endpoint as Accepted](../screenshots/08-gcp-psc-accepted.png)
 
-## Step 4: Validate the path without touching the VM
+## Step 4: Validate the path without a VM login
 
-Before logging into the test VM, you can prove the PSC path is
-reachable from the GCP side using a Connectivity Test. Open
+Before logging into any VM, you can prove the PSC path is reachable
+from the GCP side using a Connectivity Test. Open
 **Network Intelligence > Connectivity Tests > Create** and set the
-source to your test VM, the destination to the PSC endpoint, and the
-port to 7687 (or 443). GCP walks the path hop by hop and returns a
-reachability report with per-hop traces through the egress firewall,
-the subnet route, and the PSC forwarding rule.
+source to the Linux test VM, the destination to the PSC endpoint, and
+the port to 7687 (or 443). GCP walks the path hop by hop and returns
+a reachability report with per-hop traces through the egress
+firewall, the subnet route, and the PSC forwarding rule.
 
 This is my favorite sanity check when something is not working. It
 either tells you the packet is delivered at the forwarding rule, or
@@ -214,33 +219,45 @@ chasing down DNS inside a VM.
 A Cloud DNS response policy only applies to queries that originate
 from the VPC it is attached to. That means your laptop cannot test
 this; a VM inside the VPC has to. The Terraform project spins up a
-Windows Server 2022 VM for exactly this reason. Connect over RDP
-(using the ephemeral external IP, or via IAP tunnel), and run this
-PowerShell one-liner:
+small Debian 12 `e2-micro` for exactly this reason. SSH in over IAP,
+copy `scripts/validate.sh` across, and run it with the Aura private
+URI and the PSC endpoint IP as arguments:
 
-```powershell
-$h="<dbid>.production-orch-NNNN.neo4j.io"
-$ip="<psc_endpoint_ip from terraform output>"
-$dns=(Resolve-DnsName $h -Type A -ErrorAction SilentlyContinue).IPAddress
-Write-Host "DNS answer : $dns"
-443,7687,7474,8491 | ForEach-Object {
-  $r = Test-NetConnection -ComputerName $h -Port $_ -WarningAction SilentlyContinue
-  $s = if ($r.TcpTestSucceeded) { "PASS" } else { "FAIL" }
-  Write-Host ("TCP {0,-5}: {1}" -f $_, $s)
-}
+```bash
+gcloud compute scp scripts/validate.sh \
+  neo4j-test-vm-linux:~/validate.sh \
+  --tunnel-through-iap --zone=us-central1-a --project=<your-project>
+
+gcloud compute ssh neo4j-test-vm-linux --tunnel-through-iap \
+  --zone=us-central1-a --project=<your-project> \
+  --command='bash ~/validate.sh <dbid>.production-orch-NNNN.neo4j.io 10.128.0.50'
 ```
 
-What you want to see is DNS returning the PSC internal IP (not a
-public address) and TCP reachability on 443, 7687, and 7474. Port
-8491 is only used by Graph Analytics, so a failure there is fine
-unless you use GDS.
+The script uses only bash built-ins (`/dev/tcp` for port probes,
+`getent` or `dig` for DNS) so it runs on a minimal Debian image with
+no extra packages. A healthy run prints `DNS PASS`, `TCP 443 PASS`,
+`TCP 7687 PASS`, `TCP 7474 PASS`, and `RESULT: PASS` (port 8491 for
+Graph Analytics is optional and does not fail the run).
 
-## Step 6: Prove it with Neo4j Browser
+## Step 6: (Optional) Click through with Neo4j Browser
 
-Open a browser on the Windows VM and go to the instance's private
-URI, not the public one that ships in the downloadable credentials
-file. In the Connect to instance dialog, use `neo4j+s://` and the
-same private hostname.
+Steps 4 and 5 already prove PSC works. If you also want to see the
+Aura instance through the Neo4j Browser web UI from inside the VPC,
+flip on the optional Windows Server 2022 VM and re-apply:
+
+```hcl
+# terraform.tfvars
+enable_windows_browser_vm = true
+```
+
+```bash
+terraform apply
+```
+
+RDP into the Windows VM, open Edge or Chrome, and go to the
+instance's private URI, not the public one that ships in the
+downloadable credentials file. In the Connect to instance dialog,
+use `neo4j+s://` and the private hostname.
 
 ![Neo4j Browser connecting to Aura over the private URI](../screenshots/11-neo4j-browser-connect.png)
 

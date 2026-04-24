@@ -60,9 +60,23 @@ module "dns" {
   psc_ip_address       = module.psc_endpoint.psc_ip_address
 }
 
-module "test_vm" {
-  count  = var.enable_test_vm ? 1 : 0
-  source = "./modules/test_vm"
+module "test_vm_linux" {
+  count  = var.enable_linux_test_vm ? 1 : 0
+  source = "./modules/test_vm_linux"
+
+  project_id        = var.consumer_project_id
+  zone              = var.consumer_zone
+  vm_name           = var.linux_vm_name
+  machine_type      = var.linux_vm_machine_type
+  network_self_link = module.networking.network_self_link
+  subnet_self_link  = module.networking.subnetwork_self_link
+  enable_public_ip  = var.linux_vm_public_ip
+  common_labels     = local.common_labels
+}
+
+module "test_vm_windows" {
+  count  = var.enable_windows_browser_vm ? 1 : 0
+  source = "./modules/test_vm_windows"
 
   project_id        = var.consumer_project_id
   zone              = var.consumer_zone
@@ -70,6 +84,14 @@ module "test_vm" {
   machine_type      = var.windows_vm_machine_type
   network_self_link = module.networking.network_self_link
   subnet_self_link  = module.networking.subnetwork_self_link
-  enable_public_ip  = var.enable_vm_public_ip
+  enable_public_ip  = var.windows_vm_public_ip
   common_labels     = local.common_labels
+}
+
+# Preserve state from prior revisions where the Windows VM was the only
+# test VM and lived under module.test_vm. Terraform will treat it as a
+# rename rather than a destroy + create.
+moved {
+  from = module.test_vm
+  to   = module.test_vm_windows
 }
