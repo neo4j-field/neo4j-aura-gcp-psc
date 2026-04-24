@@ -20,13 +20,12 @@ in the console; the two terms are equivalent.
           |  +---------------------------+  |  (GCP    |  +------------------------+  |
           |  | default subnet            |  | backbone)|  | Service attachment     |  |
           |  |                           |  | <======> |  | db-ingress-private     |  |
-          |  |  PSC endpoint 10.128.0.50 |  |          |  |                        |  |
-          |  |  Windows test VM          |  |          |  +------------------------+  |
-          |  +---------------------------+  |          +------------------------------+
-          |                                 |
+          |  |  PSC endpoint             |  |          |  |                        |  |
+          |  +---------------------------+  |          |  +------------------------+  |
+          |                                 |          +------------------------------+
           |  Cloud DNS response policy      |
           |  *.production-orch-NNNN.neo4j.io|
-          |      -> 10.128.0.50             |
+          |      -> PSC endpoint IP         |
           +---------------------------------+
 ```
 
