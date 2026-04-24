@@ -1,0 +1,36 @@
+# -----------------------------------------------------------------------------
+# Terraform local artifacts. Never commit state, plans, or provider caches.
+# -----------------------------------------------------------------------------
+.terraform/
+.terraform.tfstate.lock.info
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+tfplan.*
+tfapply.*
+
+# -----------------------------------------------------------------------------
+# Environment-specific variable files. Commit terraform.tfvars.example only.
+# -----------------------------------------------------------------------------
+terraform.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+
+# -----------------------------------------------------------------------------
+# Credentials and secrets. Never commit.
+# -----------------------------------------------------------------------------
+Neo4j-*.txt
+*credentials*
+*secret*
+.env
+.env.*
+
+# -----------------------------------------------------------------------------
+# macOS / editor noise.
+# -----------------------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# Copy this file to terraform.tfvars and fill in the required values.
+# Do not commit terraform.tfvars (it may contain project-specific identifiers).
+# ---------------------------------------------------------------------------
+
+# Required. The consumer GCP project that will host the VPC and PSC endpoint.
+consumer_project_id = "my-org-neo4j-consumer"
+
+# Consumer region and zone. Must be in a region that supports Premium Tier
+# networking when the producer is in a different region (as in this setup).
+consumer_region = "us-west1"
+consumer_zone   = "us-west1-a"
+
+# Consumer VPC, subnet, and CIDR. Pick a CIDR that does not overlap with any
+# peered or on-prem networks you plan to reach from this VPC.
+vpc_name    = "consumer-vpc"
+subnet_name = "consumer-subnet"
+subnet_cidr = "10.10.1.0/24"
+
+# Required. PSC service attachment URI from the Neo4j Aura Console. Aura labels
+# this the "Private Link service name". Both the short form and the full
+# https://www.googleapis.com/compute/v1/... URL form are accepted.
+neo4j_service_attachment = "https://www.googleapis.com/compute/v1/projects/ni-production-rd1p/regions/us-central1/serviceAttachments/db-ingress-private"
+
+# Required. The orchestrator subdomain from the Aura Console. The wildcard DNS
+# record created will be *.<neo4j_orch_subdomain>.neo4j.io and will resolve to
+# the PSC endpoint internal IP.
+neo4j_orch_subdomain = "production-orch-0042"
+
+# Names for the reserved IP and forwarding rule. Defaults are usually fine.
+psc_ip_name       = "neo4j-psc-ip"
+psc_endpoint_name = "neo4j-psc-endpoint"
+
+# Windows test VM. Set enable_test_vm = false to skip the VM for prod-only
+# deploys where a dedicated test client is not needed.
+windows_vm_name         = "neo4j-test-vm-win"
+windows_vm_machine_type = "n2-standard-2"
+enable_test_vm          = true
+
+# Extra labels merged on top of the default neo4j-psc/managed-by labels.
+extra_labels = {
+  environment = "prod"
+  owner       = "platform-data"
+}
