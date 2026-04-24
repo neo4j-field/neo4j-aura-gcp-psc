@@ -250,7 +250,8 @@ neo4j-aura-gcp-psc/
 │   ├── validate.sh               run on the Linux VM to verify DNS + TCP
 │   ├── validate.ps1              run on the Windows VM to verify DNS + TCP
 │   ├── iap_ssh.sh                start an IAP SSH session to the Linux VM
-│   └── iap_rdp.sh                start an IAP RDP tunnel to the Windows VM
+│   ├── iap_rdp.sh                start an IAP RDP tunnel to the Windows VM
+│   └── local_tunnel.sh           forward Bolt/Browser from laptop through the Linux VM
 ├── screenshots/                  images embedded in this README
 └── prompts/                      design brief and iteration history
 ```
@@ -440,6 +441,61 @@ on the Windows VM instead (PowerShell `Test-NetConnection` and
 ```powershell
 C:\Users\Public\validate.ps1 -Neo4jHost "<dbid>.production-orch-NNNN.neo4j.io" -ExpectedPscIp "10.128.0.50"
 ```
+
+### Test from your local desktop through an SSH tunnel
+
+You can also hit the private path from your laptop without a GUI
+anywhere, using an SSH tunnel through the Linux VM. The VM resolves
+the Aura hostname through the VPC-scoped Cloud DNS response policy,
+so from your laptop you are effectively reaching PSC.
+
+The flow:
+
+```
+laptop:7687  <-- ssh -L -->  vm  <-- PSC -->  aura:7687
+                              ^
+                              resolves <host> via the VPC response policy
+```
+
+**One-time:** add the Aura private hostname to your laptop's hosts
+file so TLS cert validation works. The driver will send SNI for the
+Aura hostname, and Aura's wildcard cert covers
+`*.production-orch-NNNN.neo4j.io`, so as long as the hostname in the
+URI matches the hosts entry, TLS succeeds.
+
+- macOS / Linux: `sudo vi /etc/hosts`
+- Windows: open `C:\Windows\System32\drivers\etc\hosts` as Administrator
+
+Add:
+
+```
+127.0.0.1  <dbid>.production-orch-NNNN.neo4j.io
+```
+
+**Open the tunnel** (from the repo root, where `terraform output` works):
+
+```bash
+./scripts/local_tunnel.sh <dbid>.production-orch-NNNN.neo4j.io
+```
+
+This forwards local `7687` → Bolt and local `7474` → Browser HTTP
+through the Linux VM. Leave it running.
+
+**In a second terminal, connect with cypher-shell:**
+
+```bash
+cypher-shell -a neo4j+s://<dbid>.production-orch-NNNN.neo4j.io:7687 \
+  -u neo4j
+# paste the Aura password when prompted
+```
+
+Or from any Bolt driver (Python, Java, JavaScript) using the same
+URI. A successful `RETURN 1;` confirms the path end-to-end from your
+laptop through PSC.
+
+**When you're done**, Ctrl+C the tunnel and remove the hosts-file
+line. Leaving the line in place will make the hostname fail to
+resolve later (`127.0.0.1` with no tunnel listening).
 
 ---
 

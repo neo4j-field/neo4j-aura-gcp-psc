@@ -239,6 +239,17 @@ no extra packages. A healthy run prints `DNS PASS`, `TCP 443 PASS`,
 `TCP 7687 PASS`, `TCP 7474 PASS`, and `RESULT: PASS` (port 8491 for
 Graph Analytics is optional and does not fail the run).
 
+If you would rather run `cypher-shell` or a Neo4j driver from your
+own laptop instead of from the VM, an SSH tunnel through the same
+Linux box gets you there. The tunnel forwards Bolt from
+`localhost:7687` to `<host>:7687` on the VM side, the VM resolves
+the Aura hostname through the VPC-scoped response policy, and a
+single `/etc/hosts` line on your laptop keeps TLS cert validation
+honest. The repo ships `scripts/local_tunnel.sh` that opens the
+tunnel in one command; the README walks through the hosts-file
+setup. This is my go-to for quick application-layer tests without
+having to RDP or SSH anywhere first.
+
 ## Step 6: (Optional) Click through with Neo4j Browser
 
 Steps 4 and 5 already prove PSC works. If you also want to see the
