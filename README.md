@@ -13,21 +13,11 @@ in the console; the two terms are equivalent.
 
 ## What you'll build
 
-```
-          Consumer project                             Producer project
-          +---------------------------------+          +------------------------------+
-          | Consumer VPC                    |   PSC    | Neo4j Aura VDC               |
-          |  +---------------------------+  |  (GCP    |  +------------------------+  |
-          |  | Consumer subnet           |  | backbone)|  | Service attachment     |  |
-          |  |                           |  | <======> |  | db-ingress-private     |  |
-          |  |  PSC endpoint             |  |          |  |                        |  |
-          |  +---------------------------+  |          |  +------------------------+  |
-          |                                 |          +------------------------------+
-          |  Cloud DNS response policy      |
-          |  *.production-orch-NNNN.neo4j.io|
-          |      -> PSC endpoint IP         |
-          +---------------------------------+
-```
+![PSC architecture diagram: App Client in a Customer VPC subnet, Interface Endpoint, Private Service Connect tunnel, AuraDB VPC, three DB nodes](screenshots/00-architecture.png)
+
+A consumer VPC carries an Interface Endpoint that forwards traffic
+through Private Service Connect to the AuraDB VPC, where Aura routes
+to individual cluster nodes.
 
 Two sides, two operators:
 
@@ -61,94 +51,98 @@ The identity running Terraform needs at minimum:
 - `roles/dns.admin` (response policy and rules)
 - `roles/iam.serviceAccountUser` (attach the default compute SA to the VM)
 - `roles/iap.tunnelResourceAccessor` (for users who RDP via IAP)
+- `roles/networkmanagement.admin` (Connectivity Tests in step 5, optional)
 
 ---
 
-## Step 1: Allowlist your consumer project in the Aura Console
+## Step 1: Allowlist your consumer project and collect Terraform inputs
 
-Two things happen here: you allowlist the consumer project so Aura
-will accept the inbound PSC connection, and you collect the two
-identifiers Terraform needs later.
+The Aura Console's network access wizard is three steps. Step 1
+allowlists your consumer project, step 2 hands you the two values
+Terraform needs, step 3 disables public traffic (which you'll do
+later, after you've validated the private path).
 
 ### 1.1 Open the network access wizard
 
-In the Aura Console (<https://console.neo4j.io>), click your instance
-tile, then **Network access configuration > Edit**. A three-step
-wizard opens.
+From the Aura Console (<https://console.neo4j.io>), open the left
+navigation, expand **Project**, and click **Settings**:
 
-### 1.2 Step 1 of 3: Instance Type and Target GCP Project ID's
+![Aura Console left nav with Project > Settings highlighted](screenshots/01-aura-settings-menu.png)
+
+On the Project settings page, find the **Private endpoints** tile
+("Configure network access to your instance") and click it:
+
+![Aura Project settings with the Private endpoints tile highlighted](screenshots/02-aura-private-endpoints.jpg)
+
+That opens the three-step **Edit network access configuration** wizard.
+
+### 1.2 Wizard Step 1 of 3: Target GCP Project ID's
 
 - **Instance Type**: pick the type of the instance you are securing
   (AuraDB Professional, Enterprise, Business Critical, and so on).
 - **Target GCP Project ID's**: click **Add project ID** and enter the
-  GCP project ID where you will run Terraform (the consumer project,
-  not the Aura producer project).
+  GCP project ID where you will run Terraform.
 
-![Aura network access configuration with consumer project ID added](screenshots/01-aura-network-access-config.jpg)
+![Aura wizard Step 1 of 3 with the consumer GCP project ID added](screenshots/03-aura-wizard-step1-target-projects.jpg)
 
-**Critical**: this string must match `consumer_project_id` in
-`terraform.tfvars` exactly. If the strings differ, Terraform will
-create the forwarding rule but `psc_connection_status` will stay on
-`PENDING` until corrected.
+**Critical**: the string you paste here must match the
+`consumer_project_id` you'll set in `terraform.tfvars` in step 3,
+exactly. If the strings differ, Terraform will create the forwarding
+rule but `psc_connection_status` will stay on `PENDING`. To find your
+GCP project ID without guessing, open the GCP Console, click the
+project picker at the top, and copy the value in the **ID** column
+(not the **Name** column):
+
+![GCP Console resource picker with the ID column highlighted](screenshots/04-gcp-project-id.jpg)
 
 Click **Next**.
 
-### 1.3 Step 2 of 3: Region
+### 1.3 Wizard Step 2 of 3: Copy the Service Attachment URL and DNS Name
 
-Confirm the region where your Aura instance lives. If the wizard
-shows "All regions configured" this is informational; the regions
-are already set and you can just move forward. Click **Next**.
+Step 2 is where Aura hands you the two identifiers Terraform needs.
+At the top of the page, a green **Accepted** badge confirms your
+project allowlist is saved. Below it is the **Service Attachment URL**
+with a **Copy** button:
 
-### 1.4 Step 3 of 3: Review and save
+![Aura wizard Step 2 of 3 showing the Service Attachment URL with a Copy button](screenshots/05-aura-wizard-step2-service-attachment.png)
 
-Review the summary and click **Save**. The wizard closes and you
-return to the instance page.
+Click **Copy** and save the value somewhere. This is your
+`neo4j_service_attachment` for `terraform.tfvars`. A concrete example
+for a `us-central1` instance looks like
+`https://www.googleapis.com/compute/v1/projects/ni-production-rd1p/regions/us-central1/serviceAttachments/db-ingress-private`.
 
-### 1.5 Collect the two Terraform inputs from the instance page
+Scroll down on the same wizard page. Aura prints the GCP-side
+instructions for creating a PSC endpoint and DNS rule manually. You
+will not follow those steps by hand because Terraform does them for
+you, but one value from that section is useful: the **DNS Name**, for
+example `production-orch-0792.neo4j.io.`:
 
-After saving, the instance page surfaces the two PSC-specific values
-you will paste into `terraform.tfvars` in step 3:
+![Aura wizard Step 2 of 3 with the DNS Name highlighted in the GCP-side instructions](screenshots/06-aura-wizard-step2-dns-name.jpg)
 
-- **Private Link service name** (the PSC service attachment URI).
-  Looks like:
+That DNS Name's middle segment (`production-orch-0792`) is your
+`neo4j_orch_subdomain` for `terraform.tfvars`. Do not include the
+leading wildcard or the trailing dot; Terraform adds those.
 
-  ```
-  https://www.googleapis.com/compute/v1/projects/<aura-ingress-project>/regions/<aura-region>/serviceAttachments/<name>
-  ```
+### 1.4 Wizard Step 3 of 3: Pause here
 
-  A real example for `us-central1` is
-  `https://www.googleapis.com/compute/v1/projects/ni-production-rd1p/regions/us-central1/serviceAttachments/db-ingress-private`.
-  This points at a shared Neo4j-owned ingress attachment in the same
-  region as your instance. Copy the value the console shows verbatim.
-  Terraform accepts either the full `https://www.googleapis.com/...`
-  form or the shortened `projects/.../serviceAttachments/...` form.
+Click **Next** to preview Step 3. It looks like this:
 
-- **Orchestrator subdomain**, which is the middle segment of the
-  instance's **Private URI**. The Private URI is shown as a full
-  hostname like `c466fb81.production-orch-0792.neo4j.io`, which
-  breaks into three parts:
+![Aura wizard Step 3 of 3 with Disable public traffic unchecked and the VPN acknowledgment](screenshots/07-aura-wizard-step3-disable-public.png)
 
-  - `c466fb81` — the instance ID (not needed here).
-  - `production-orch-0792` — the orchestrator subdomain (this is the
-    value you need for `neo4j_orch_subdomain`).
-  - `neo4j.io` — the public suffix.
+**Do not check "Disable public traffic" yet.** You will come back to
+this screen in the final step of this guide, after validating the
+private path. For now, click **Finish later** (bottom-left) to save
+your progress and exit the wizard.
 
-  Copy only the middle segment. Terraform will build the full
-  wildcard DNS override (`*.production-orch-0792.neo4j.io`) from it.
+### 1.5 What you should have now
 
-  If the console is showing a **Connection URI** like
-  `neo4j+s://<dbid>.databases.neo4j.io`, that is the *public* URI,
-  not what you want. The Private URI only appears after Private Link
-  is enabled on the instance; if you do not see it, refresh the
-  instance page.
+Three values, one per Terraform variable:
 
-You should end this step with three values written down:
-
-| What                                 | Where it came from                       | Terraform variable          |
-| ------------------------------------ | ---------------------------------------- | --------------------------- |
-| Consumer GCP project ID              | You typed it into **Target GCP Project ID's** | `consumer_project_id`       |
-| Private Link service name            | Instance page, under Private Link        | `neo4j_service_attachment`  |
-| Orchestrator subdomain               | Middle segment of the Private URI        | `neo4j_orch_subdomain`      |
+| What                      | Where it came from                                   | Terraform variable         |
+| ------------------------- | ---------------------------------------------------- | -------------------------- |
+| Consumer GCP project ID   | You typed it in wizard Step 1 (screenshot 04)        | `consumer_project_id`      |
+| Service Attachment URL    | Copy button on wizard Step 2 (screenshot 05)         | `neo4j_service_attachment` |
+| Orchestrator subdomain    | Middle segment of the DNS Name on wizard Step 2 (screenshot 06) | `neo4j_orch_subdomain`     |
 
 ---
 
@@ -182,12 +176,13 @@ cd neo4j-aura-gcp-psc
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Edit `terraform.tfvars`. The two lines you **must** set are:
+Edit `terraform.tfvars`. The three lines you **must** set, using the
+values you collected in step 1.5:
 
 ```hcl
 consumer_project_id      = "<your consumer GCP project ID>"
-neo4j_service_attachment = "<Private Link service name from step 1>"
-neo4j_orch_subdomain     = "<orchestrator subdomain from step 1>"
+neo4j_service_attachment = "<Service Attachment URL from step 1.3>"
+neo4j_orch_subdomain     = "<orchestrator subdomain from step 1.3>"
 ```
 
 The common knobs you may want to change:
@@ -228,16 +223,55 @@ windows_vm_zone          = "us-central1-a"
 iap_rdp_command          = "gcloud compute start-iap-tunnel ..."
 ```
 
-If `psc_connection_status` shows `PENDING`, re-check step 1: the project ID
-in the Aura allowlist must match `consumer_project_id` exactly.
+Confirm the same thing from the GCP Console side: **Network services >
+Private Service Connect > Connected endpoints**. The endpoint shows as
+**Accepted**:
+
+![GCP Console showing the PSC endpoint as Accepted](screenshots/08-gcp-psc-accepted.png)
+
+If `psc_connection_status` shows `PENDING`, re-check step 1.2: the
+project ID in the Aura allowlist must match `consumer_project_id`
+exactly.
 
 ---
 
-## Step 5: RDP into the Windows test VM
+## Step 5: (Optional) Validate with a GCP Connectivity Test
+
+Before logging into the VM, you can prove the PSC path is reachable
+from the GCP side using a Connectivity Test. This exercises the same
+forwarding-rule, subnet-route, and firewall-rule hops a real client
+traverses, without needing to RDP in.
+
+In the GCP Console, open **Network Intelligence > Connectivity Tests**
+and click **Create Connectivity Test**. Fill in:
+
+- **Test name**: `neo4j-psc-endpoint-test`
+- **Protocol**: `tcp`
+- **Source**: VM instance `neo4j-test-vm-win` (source IP auto-fills from the VM's NIC)
+- **Destination**: PSC endpoint `neo4j-psc-endpoint` (10.128.0.50)
+- **Destination port**: `443`
+
+![Create Connectivity Test form with source and destination filled in](screenshots/09-gcp-connectivity-test-create.png)
+
+Click **Create**. GCP runs the test and returns a reachability report.
+A healthy result looks like 50/50 packets delivered, sub-millisecond
+latency, and a green **Reachable** badge on both the forward and return
+traces. The forward trace walks through the egress firewall rule, the
+subnet route, and the PSC forwarding rule:
+
+![Connectivity Test results showing 50/50 packets delivered and reachable in both directions](screenshots/10-gcp-connectivity-test-result.jpg)
+
+You can repeat this for ports 7687, 7474, and 8491 by editing the
+destination port. A failure here points at a routing or firewall issue
+and is easier to diagnose than one reported from inside the VM.
+
+---
+
+## Step 6: RDP into the Windows test VM
 
 Two paths depending on your `enable_vm_public_ip` choice.
 
-### 5a. With public IP (direct RDP)
+### 6a. With public IP (direct RDP)
 
 Reset the Windows password:
 
@@ -255,7 +289,7 @@ terraform output windows_vm_public_ip
 Open your RDP client and connect to `<external-ip>:3389` with the
 username/password from the reset command.
 
-### 5b. Via IAP tunnel (no public IP)
+### 6b. Via IAP tunnel (no public IP)
 
 Start the tunnel (keep this terminal open):
 
@@ -268,7 +302,7 @@ That listens on `localhost:13389`. Point your RDP client at
 
 ---
 
-## Step 6: Validate the PSC private path
+## Step 7: Validate the PSC private path from the VM
 
 On the Windows VM, open PowerShell and paste this one-liner (substitute
 your own `$h` with the private URI and `$ip` with `psc_endpoint_ip`):
@@ -309,7 +343,7 @@ C:\Users\Public\validate.ps1 -Neo4jHost "<dbid>.production-orch-NNNN.neo4j.io" -
 
 ---
 
-## Step 7: Connect to Neo4j over the private URI
+## Step 8: Connect to Neo4j over the private URI
 
 On the Windows VM, open Edge or Chrome and navigate to:
 
@@ -324,7 +358,7 @@ Neo4j Browser loads. In the Connect to instance dialog:
 - Database user: `neo4j`
 - Password: from the Aura credentials file you downloaded when you created the instance
 
-![Neo4j Browser connecting to the Aura instance over the private URI](screenshots/02-neo4j-browser-connect.png)
+![Neo4j Browser connecting to the Aura instance over the private URI](screenshots/11-neo4j-browser-connect.png)
 
 Use the **Private URI**, not the public one (`<dbid>.databases.neo4j.io`) —
 the public URI resolves via public DNS and bypasses PSC.
@@ -340,22 +374,30 @@ through the wildcard DNS rule (`*.production-orch-NNNN.neo4j.io.`) to
 the PSC endpoint IP, confirming end-to-end routing traverses the private
 backbone:
 
-![SHOW DATABASES showing cluster node addresses resolved via the wildcard DNS rule](screenshots/03-neo4j-browser-show-databases.png)
+![SHOW DATABASES showing cluster node addresses resolved via the wildcard DNS rule](screenshots/12-neo4j-browser-show-databases.png)
 
-Each `p-<dbid>-<shard>.production-orch-NNNN.neo4j.io:7687` address
+Every `p-<dbid>-<shard>.production-orch-NNNN.neo4j.io:7687` address
 traffic flows through PSC, not the public internet.
 
 ---
 
-## Step 8: (Recommended) Disable public access
+## Step 9: Finish the Aura wizard (disable public traffic)
 
-Only after step 7 succeeds, return to the Aura Console and toggle
-**Disable Public Access** on the instance. This forces all traffic
-through PSC and is the final hardening step.
+Now that the private path is validated, return to the Aura Console
+and reopen **Project > Settings > Private endpoints**, which takes
+you back into the same three-step wizard from step 1. Click through
+to **Step 3 of 3**, check **Disable public traffic**, tick the VPN
+acknowledgment, and click **Save**:
 
-If you disable public access before step 7 passes you will lose access
-to the instance from anywhere outside the consumer VPC. Re-enable it
-from the console if that happens.
+![Aura wizard Step 3 of 3 with Disable public traffic available](screenshots/07-aura-wizard-step3-disable-public.png)
+
+From this point on, every client on the internet will be refused and
+the only way into the instance is through the PSC path you just
+built.
+
+If you flip **Disable public traffic** before step 8 passes, you lose
+all access to the instance from anywhere outside the consumer VPC.
+Re-enable it from the wizard to recover if that happens.
 
 ---
 
@@ -363,13 +405,14 @@ from the console if that happens.
 
 | Symptom                                            | Likely cause and fix                                                                                            |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `psc_connection_status` stuck on `PENDING`         | Consumer project ID mismatch in Aura's **Target GCP Project ID's** allowlist. Re-check step 1.                  |
+| `psc_connection_status` stuck on `PENDING`         | Consumer project ID mismatch in Aura's **Target GCP Project ID's** allowlist. Re-check step 1.2.                |
 | DNS resolves to a public IP on the Windows VM      | Response policy not attached to the VM's VPC, or trailing dot missing on `dns_name`. The provided module handles both. |
 | `Test-NetConnection` on 7687 fails, DNS is correct | Connection not yet `ACCEPTED`, or Premium Tier not enabled for a cross-region setup.                            |
 | `terraform apply` fails on the forwarding rule     | Service attachment URI is wrong, region mismatched, or consumer project not yet on the Aura allowlist.          |
 | RDP tunnel fails with `permission denied`          | Missing `roles/iap.tunnelResourceAccessor` on the user.                                                         |
-| Lost access after disabling public access          | Enable it again from the Aura Console, re-run step 6 to validate the private path, then disable.                |
+| Lost access after disabling public traffic         | Reopen the Aura wizard, uncheck **Disable public traffic**, re-run step 7 to validate the private path, then re-enable. |
 | Neo4j Browser: certificate hostname mismatch       | You connected to the public URI. Use the **Private URI** `<dbid>.production-orch-NNNN.neo4j.io`.                |
+| GCP Connectivity Test returns Unreachable          | Check the forwarding rule status in the GCP Console, and verify the test's source VM is in the same VPC as the PSC endpoint. |
 
 ---
 
@@ -380,8 +423,8 @@ terraform destroy
 ```
 
 The Aura side of the connection is not managed by Terraform. Remove the
-consumer project from the Aura allowlist in the console (or simply
-rotate it out) to finish tear-down.
+consumer project from the Aura allowlist in the wizard (Step 1) to
+finish tear-down.
 
 ---
 
@@ -437,3 +480,4 @@ neo4j-aura-gcp-psc/
 - [Neo4j Aura: Secure Connections](https://neo4j.com/docs/aura/security/secure-connections/)
 - [GCP: Access published services through Private Service Connect](https://cloud.google.com/vpc/docs/configure-private-service-connect-services)
 - [GCP: Cloud DNS response policies](https://cloud.google.com/dns/docs/zones/manage-response-policies)
+- [GCP: Connectivity Tests](https://cloud.google.com/network-intelligence-center/docs/connectivity-tests/overview)
