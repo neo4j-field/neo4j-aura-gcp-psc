@@ -24,26 +24,37 @@ existing_subnet_name  = "default"
 # https://www.googleapis.com/compute/v1/... URL form are accepted.
 neo4j_service_attachment = "https://www.googleapis.com/compute/v1/projects/ni-production-rd1p/regions/us-central1/serviceAttachments/db-ingress-private"
 
-# Required. The orchestrator subdomain from the Aura Console. The wildcard
-# DNS record created will be *.<neo4j_orch_subdomain>.neo4j.io and will
-# resolve to the PSC endpoint internal IP.
-neo4j_orch_subdomain = "production-orch-NNNN"
+# Required. Full orchestrator DNS name from the Aura Console wizard
+# Step 2 of 3 ("DNS Name"). Paste verbatim, including .neo4j.io. Terraform
+# creates an apex A record at this name and a wildcard A record at *.<name>,
+# both pointing at the PSC endpoint internal IP.
+neo4j_orch_dns_name = "production-orch-NNNN.neo4j.io"
 
-# Names for the reserved IP and forwarding rule. Defaults are usually fine.
-psc_ip_name       = "neo4j-psc-ip"
-psc_endpoint_name = "neo4j-psc-endpoint"
+# Names for resources Terraform creates. Defaults are usually fine.
+psc_ip_name              = "neo4j-psc-ip"
+psc_endpoint_name        = "neo4j-psc-endpoint"
+dns_response_policy_name = "neo4j-psc-rpz"
 
 # ---------------------------------------------------------------------------
-# Windows browser VM (optional, disabled by default). Enable only if you
-# want to click through the Neo4j Browser UI from inside the VPC. The GCP
-# Connectivity Test alone is sufficient to validate the PSC path; this VM
-# adds Microsoft licensing cost and boot time, so leave it off unless you
-# specifically need the web UI.
+# Per-resource create/reuse toggles. Defaults all create. Flip a toggle to
+# false and set the matching existing_*_name to attach to a pre-existing
+# resource. Common reasons:
+#   - re-running after a partial apply where one resource already exists
+#   - sharing a single Cloud DNS response policy across multiple Aura
+#     instances in the same VPC (set create_dns_response_policy = false and
+#     point existing_dns_response_policy_name at the policy you keep)
 # ---------------------------------------------------------------------------
-enable_windows_browser_vm = false
-windows_vm_name           = "neo4j-test-vm-win"
-windows_vm_machine_type   = "n2-standard-2"
-windows_vm_public_ip      = false
+# create_psc_ip                     = true
+# existing_psc_ip_name              = ""
+# create_psc_endpoint               = true
+# existing_psc_endpoint_name        = ""
+# create_dns_response_policy        = true
+# existing_dns_response_policy_name = ""
+
+# When sharing one response policy across multiple Aura instances, override
+# the rule names to keep them unique within the shared policy.
+# dns_apex_rule_name     = "neo4j-apex-prod0792"
+# dns_wildcard_rule_name = "neo4j-wildcard-prod0792"
 
 # Extra labels merged on top of the default neo4j-psc/managed-by labels.
 extra_labels = {

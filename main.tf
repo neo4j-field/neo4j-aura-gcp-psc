@@ -41,43 +41,54 @@ module "networking" {
 module "psc_endpoint" {
   source = "./modules/psc_endpoint"
 
-  project_id               = var.consumer_project_id
-  region                   = var.consumer_region
-  network_self_link        = module.networking.network_self_link
-  subnet_self_link         = module.networking.subnetwork_self_link
-  psc_ip_name              = var.psc_ip_name
-  psc_endpoint_name        = var.psc_endpoint_name
-  neo4j_service_attachment = var.neo4j_service_attachment
-  common_labels            = local.common_labels
+  project_id                 = var.consumer_project_id
+  region                     = var.consumer_region
+  network_self_link          = module.networking.network_self_link
+  subnet_self_link           = module.networking.subnetwork_self_link
+  create_psc_ip              = var.create_psc_ip
+  existing_psc_ip_name       = var.existing_psc_ip_name
+  psc_ip_name                = var.psc_ip_name
+  create_psc_endpoint        = var.create_psc_endpoint
+  existing_psc_endpoint_name = var.existing_psc_endpoint_name
+  psc_endpoint_name          = var.psc_endpoint_name
+  neo4j_service_attachment   = var.neo4j_service_attachment
+  common_labels              = local.common_labels
 }
 
 module "dns" {
   source = "./modules/dns"
 
-  project_id           = var.consumer_project_id
-  network_self_link    = module.networking.network_self_link
-  neo4j_orch_subdomain = var.neo4j_orch_subdomain
-  psc_ip_address       = module.psc_endpoint.psc_ip_address
+  project_id                    = var.consumer_project_id
+  network_self_link             = module.networking.network_self_link
+  neo4j_orch_dns_name           = var.neo4j_orch_dns_name
+  psc_ip_address                = module.psc_endpoint.psc_ip_address
+  create_response_policy        = var.create_dns_response_policy
+  existing_response_policy_name = var.existing_dns_response_policy_name
+  response_policy_name          = var.dns_response_policy_name
+  apex_rule_name                = var.dns_apex_rule_name
+  wildcard_rule_name            = var.dns_wildcard_rule_name
 }
 
-module "test_vm_windows" {
-  count  = var.enable_windows_browser_vm ? 1 : 0
-  source = "./modules/test_vm_windows"
+# ---------------------------------------------------------------------------
+# State migrations.
+#
+# Earlier revisions kept several resources without a count meta-argument.
+# This release wraps them in count-driven create/reuse toggles, so the
+# state addresses gain a `[0]` index. Terraform reconciles state via the
+# moved blocks below instead of destroy + recreate.
+# ---------------------------------------------------------------------------
 
-  project_id        = var.consumer_project_id
-  zone              = var.consumer_zone
-  vm_name           = var.windows_vm_name
-  machine_type      = var.windows_vm_machine_type
-  network_self_link = module.networking.network_self_link
-  subnet_self_link  = module.networking.subnetwork_self_link
-  enable_public_ip  = var.windows_vm_public_ip
-  common_labels     = local.common_labels
-}
-
-# Preserve state from prior revisions where the Windows VM was the only
-# test VM and lived under module.test_vm. Terraform will treat it as a
-# rename rather than a destroy + create.
 moved {
-  from = module.test_vm
-  to   = module.test_vm_windows
+  from = module.psc_endpoint.google_compute_address.psc
+  to   = module.psc_endpoint.google_compute_address.psc[0]
+}
+
+moved {
+  from = module.psc_endpoint.google_compute_forwarding_rule.psc
+  to   = module.psc_endpoint.google_compute_forwarding_rule.psc[0]
+}
+
+moved {
+  from = module.dns.google_dns_response_policy.neo4j
+  to   = module.dns.google_dns_response_policy.neo4j[0]
 }
