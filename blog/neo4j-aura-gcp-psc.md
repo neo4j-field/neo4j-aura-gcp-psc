@@ -5,7 +5,7 @@ excerpt: "A practical, end-to-end walkthrough of connecting Neo4j Aura VDC to a 
 author: Guhan Sivaji
 categories: [Aura, GCP, Networking]
 tags: [neo4j-aura, gcp, private-service-connect, psc, terraform, cloud-dns]
-featured_image: screenshots/12-neo4j-browser-show-databases.png
+featured_image: screenshots/00-architecture.png
 ---
 
 # Private Networking for Neo4j Aura on GCP, Step by Step with Private Service Connect
@@ -44,8 +44,10 @@ flows over Google's backbone.
 
 Five resources land in the consumer project. A reserved internal IP, a
 forwarding rule, a response policy, and two response policy rules (one
-for the wildcard, one for the apex). Plus a small test VM so you can
-prove the path works end to end.
+for the wildcard, one for the apex). That is the whole consumer side.
+Validation runs against a GCP Connectivity Test or against whatever
+client you already have inside the VPC, so the Terraform stays focused
+on the network plumbing rather than spinning up disposable VMs.
 
 ## Before you begin
 
@@ -55,10 +57,11 @@ prove the path works end to end.
 - A consumer GCP project where you will create the endpoint.
 - `gcloud` authenticated with application-default credentials on that
   project, and Terraform 1.5 or newer.
-- IAM on the consumer project: `roles/compute.networkAdmin`,
-  `roles/compute.instanceAdmin.v1`, `roles/dns.admin`,
-  `roles/iam.serviceAccountUser`, and
-  `roles/iap.tunnelResourceAccessor` for users who will RDP via IAP.
+- IAM on the consumer project: `roles/compute.networkAdmin` for
+  addresses, forwarding rules, and (when `create_network = true`)
+  firewall rules; `roles/dns.admin` for the response policy and rules;
+  and `roles/networkmanagement.admin` if you want to run the GCP
+  Connectivity Test as your validation.
 
 ## Step 1: Allowlist your consumer project and collect the two Terraform inputs
 
@@ -95,9 +98,12 @@ That URL, copied verbatim, is your `neo4j_service_attachment`.
 
 Scroll down on the same page and Aura prints the GCP-side setup steps
 that Terraform will perform for you. Inside those steps, the **DNS
-Name** field is highlighted. The middle segment of that DNS name
-(`production-orch-NNNN`) is your `neo4j_orch_subdomain`. Ignore the
-leading wildcard and trailing dot; Terraform adds those.
+Name** field is highlighted, for example `production-orch-0792.neo4j.io.`.
+Paste that hostname verbatim into `neo4j_orch_dns_name`, including the
+`.neo4j.io` suffix. The trailing dot is optional and stripped; do not
+include the leading wildcard. Terraform builds both the apex A record
+(at the hostname itself) and the wildcard A record (`*.<hostname>`)
+from that single input.
 
 For now, click **Finish later** to save the wizard state and exit. You
 will return to Step 3 of the wizard in the final step of this guide.
@@ -133,10 +139,9 @@ cd neo4j-aura-gcp-psc
 ```
 
 The root of the repo has `main.tf`, `variables.tf`, and `outputs.tf`
-that wire together four reusable modules under `modules/`. You will
-not normally edit those; you edit `terraform.tfvars`. Copy the
-example file, which is already shaped with comments explaining each
-knob:
+that wire together three reusable modules under `modules/`. You will
+not normally edit those; you edit `terraform.tfvars`. Copy the example
+file, which is already shaped with comments explaining each knob:
 
 ```bash
 cp terraform.tfvars.example terraform.tfvars
@@ -147,7 +152,7 @@ Three values are required:
 ```hcl
 consumer_project_id      = "<your-consumer-project>"
 neo4j_service_attachment = "<Service Attachment URL from wizard Step 2>"
-neo4j_orch_subdomain     = "<orchestrator subdomain from wizard Step 2>"
+neo4j_orch_dns_name      = "<DNS Name from wizard Step 2, e.g. production-orch-0792.neo4j.io>"
 ```
 
 The networking module has two modes. By default it creates a new VPC,
@@ -160,19 +165,24 @@ existing_network_name = "default"
 existing_subnet_name  = "default"
 ```
 
-Under the hood, Terraform splits the work across five modules.
+Under the hood, Terraform splits the work across three modules.
 `networking` either creates new VPC resources or looks up existing
 ones by name. `psc_endpoint` reserves a static internal IP with
 `purpose = GCE_ENDPOINT` and then a forwarding rule with
 `load_balancing_scheme = ""` targeting the Aura service attachment.
 `dns` attaches a response policy to the VPC and creates two
-local-data rules, one for the wildcard and one for the apex.
-`test_vm_linux` drops in a tiny Debian 12 `e2-micro` client for
-validation (you will rarely need anything bigger). `test_vm_windows`
-is the opt-in Windows Server 2022 box you turn on only if you want
-to click through Neo4j Browser's web UI from inside the VPC. For a
-first deployment, the default settings are what you want:
-`enable_linux_test_vm = true`, `enable_windows_browser_vm = false`.
+local-data rules, one for the apex and one for the wildcard.
+
+Each PSC and DNS resource also carries a `create_*` toggle and a
+matching `existing_*_name`. Default is to create. Flip a toggle to
+`false` and supply the existing resource name to attach to it instead.
+That covers two real-world cases. The first is a re-run after a
+partial apply, where the previous run created some resources and
+failed before the rest, so a plain second apply blows up on `409
+already exists`. The second is onboarding a second Aura instance into
+the same VPC: Cloud DNS attaches at most one response policy per
+network, so the second instance has to share the first one's policy
+rather than create its own.
 
 ## Step 3: Apply and confirm the connection
 
@@ -199,99 +209,38 @@ You can confirm the same thing from the GCP Console side under
 
 ![GCP Console showing the PSC endpoint as Accepted](../screenshots/08-gcp-psc-accepted.png)
 
-## Step 4: Validate the path without a VM login
+## Step 4: Validate the path with a Connectivity Test
 
-Before logging into any VM, you can prove the PSC path is reachable
-from the GCP side using a Connectivity Test. Open
-**Network Intelligence > Connectivity Tests > Create** and set the
-source to the Linux test VM, the destination to the PSC endpoint, and
-the port to 7687 (or 443). GCP walks the path hop by hop and returns
-a reachability report with per-hop traces through the egress
-firewall, the subnet route, and the PSC forwarding rule.
+This is the validation I run first, every time. A GCP Connectivity
+Test exercises the same forwarding-rule, subnet-route, and
+firewall-rule hops a real client traverses, and returns a
+reachability report, all from the GCP Console without needing a VM.
+
+Open **Network Intelligence > Connectivity Tests > Create**. Pick a
+source inside the consumer VPC (a spare internal IP in the consumer
+subnet works; if you already have a client VM in the same VPC, point
+at it instead), the destination is the PSC endpoint IP from the
+Terraform output, protocol `tcp`, and port `7687` (or `443`). GCP
+walks the path hop by hop and returns a per-hop trace through the
+egress firewall, the subnet route, and the PSC forwarding rule. A
+healthy result shows 50/50 packets delivered, sub-millisecond
+latency, and a green **Reachable** badge in both directions.
 
 This is my favorite sanity check when something is not working. It
-either tells you the packet is delivered at the forwarding rule, or
+either confirms the packet is delivered at the forwarding rule, or
 it points at the exact hop that blocked it, before you burn any time
 chasing down DNS inside a VM.
 
-## Step 5: Validate from inside the VPC
+A note on the response policy and where you test from. Cloud DNS
+response policies only apply to queries originating from the VPC the
+policy is attached to. Your laptop will not see the override; a
+client inside the consumer VPC will. If you want to run
+`cypher-shell` or a Neo4j driver against the private URI, do it from
+a VM in that VPC, or from a workload connected to it. The
+Connectivity Test in this step is the cleanest way to prove the PSC
+path is open without standing up either.
 
-A Cloud DNS response policy only applies to queries that originate
-from the VPC it is attached to. That means your laptop cannot test
-this; a VM inside the VPC has to. The Terraform project spins up a
-small Debian 12 `e2-micro` for exactly this reason. SSH in over IAP,
-copy `scripts/validate.sh` across, and run it with the Aura private
-URI and the PSC endpoint IP as arguments:
-
-```bash
-gcloud compute scp scripts/validate.sh \
-  neo4j-test-vm-linux:~/validate.sh \
-  --tunnel-through-iap --zone=us-central1-a --project=<your-project>
-
-gcloud compute ssh neo4j-test-vm-linux --tunnel-through-iap \
-  --zone=us-central1-a --project=<your-project> \
-  --command='bash ~/validate.sh <dbid>.production-orch-NNNN.neo4j.io 10.128.0.50'
-```
-
-The script uses only bash built-ins (`/dev/tcp` for port probes,
-`getent` or `dig` for DNS) so it runs on a minimal Debian image with
-no extra packages. A healthy run prints `DNS PASS`, `TCP 443 PASS`,
-`TCP 7687 PASS`, `TCP 7474 PASS`, and `RESULT: PASS` (port 8491 for
-Graph Analytics is optional and does not fail the run).
-
-If you would rather run `cypher-shell` or a Neo4j driver from your
-own laptop instead of from the VM, an SSH tunnel through the same
-Linux box gets you there. The tunnel forwards Bolt from
-`localhost:7687` to `<host>:7687` on the VM side, the VM resolves
-the Aura hostname through the VPC-scoped response policy, and a
-single `/etc/hosts` line on your laptop keeps TLS cert validation
-honest. The repo ships `scripts/local_tunnel.sh` that opens the
-tunnel in one command; the README walks through the hosts-file
-setup. This is my go-to for quick application-layer tests without
-having to RDP or SSH anywhere first.
-
-## Step 6: (Optional) Click through with Neo4j Browser
-
-Steps 4 and 5 already prove PSC works. If you also want to see the
-Aura instance through the Neo4j Browser web UI from inside the VPC,
-flip on the optional Windows Server 2022 VM and re-apply:
-
-```hcl
-# terraform.tfvars
-enable_windows_browser_vm = true
-```
-
-```bash
-terraform apply
-```
-
-RDP into the Windows VM, open Edge or Chrome, and go to the
-instance's private URI, not the public one that ships in the
-downloadable credentials file. In the Connect to instance dialog,
-use `neo4j+s://` and the private hostname.
-
-![Neo4j Browser connecting to Aura over the private URI](../screenshots/11-neo4j-browser-connect.png)
-
-Once you are in, the test that makes the whole thing tangible is:
-
-```cypher
-SHOW DATABASES YIELD name, address, role;
-```
-
-Every address in the result set points at an internal cluster node
-under the same wildcard:
-
-![SHOW DATABASES results with cluster node addresses resolved via the wildcard DNS rule](../screenshots/12-neo4j-browser-show-databases.png)
-
-This is the moment I like. It is not just that one connection works.
-Bolt routing is looking up several cluster member hostnames, all of
-the form `p-<dbid>-<shard>.production-orch-NNNN.neo4j.io:7687`, and
-every one of those lookups is being rewritten by the Cloud DNS
-response policy to the PSC endpoint IP. Every driver session, every
-routing refresh, every one of those cluster addresses rides the PSC
-tunnel.
-
-## Step 7: Finish the Aura wizard
+## Step 5: Finish the Aura wizard
 
 Now go back to the Aura Console, reopen the same wizard from
 **Project > Settings > Private endpoints**, and click through to
@@ -300,7 +249,7 @@ acknowledgment, and click **Save**. From this point on, every client
 on the internet will be refused and the only way into the instance is
 through the PSC path you just built.
 
-If you flip the toggle before step 6 passes, you lose all access to
+If you flip the toggle before step 4 passes, you lose all access to
 the instance from anywhere outside the consumer VPC. Uncheck it and
 save to recover.
 
@@ -312,6 +261,24 @@ response policy rules do not do subtree matching, so the rule for
 `*.production-orch-NNNN.neo4j.io.` will not catch a query for the apex
 `production-orch-NNNN.neo4j.io.` and vice versa. Create both. The
 Terraform module does this automatically.
+
+**One response policy per VPC, shared across instances.** Cloud DNS
+attaches at most one response policy to a network. If you onboard a
+second Aura instance into the same VPC, it has to share the policy
+the first one created rather than spin up its own. The
+`create_dns_response_policy = false` toggle plus
+`existing_dns_response_policy_name` lets the second run attach its
+apex and wildcard rules to the existing policy. Override
+`dns_apex_rule_name` and `dns_wildcard_rule_name` so the new rule
+names do not collide with the ones already there.
+
+**Plan for partial-apply recovery up front.** If a first apply creates
+the PSC IP and the forwarding rule but fails on the response policy,
+the next plain apply blows up on `409 already exists`. The
+`create_*` and `existing_*_name` toggles on each resource are the
+escape hatch: flip the ones that already exist, point them at the
+existing names, and the re-run attaches instead of recreating. Once
+state is healthy, flip them back for future runs.
 
 **The credentials file gives you the public URI.** When you download
 credentials from the Aura Console, the `NEO4J_URI` is
@@ -343,6 +310,6 @@ all in the repository:
 
 > **<https://github.com/neo4j-field/neo4j-aura-gcp-psc>**
 
-The README walks through the same seven steps with the full commands
-and every screenshot. The `prompts/` folder preserves how the design
+The README walks through the same flow with the full commands and
+every screenshot. The `prompts/` folder preserves how the design
 evolved. If you find a gotcha I missed, open an issue or a PR.
