@@ -42,16 +42,17 @@ locals {
 # ---------------------------------------------------------------------------
 
 resource "google_compute_forwarding_rule" "psc" {
-  count                 = local.create_endpoint_int
-  name                  = var.psc_endpoint_name
-  project               = var.project_id
-  region                = var.region
-  network               = var.network_self_link
-  ip_address            = local.psc_ip_self_link
-  target                = var.neo4j_service_attachment
-  load_balancing_scheme = ""
-  description           = "Private Service Connect consumer endpoint targeting the Neo4j Aura service attachment."
-  labels                = var.common_labels
+  count                   = local.create_endpoint_int
+  name                    = var.psc_endpoint_name
+  project                 = var.project_id
+  region                  = var.region
+  network                 = var.network_self_link
+  ip_address              = local.psc_ip_self_link
+  target                  = var.neo4j_service_attachment
+  load_balancing_scheme   = ""
+  allow_psc_global_access = var.allow_psc_global_access
+  description             = "Private Service Connect consumer endpoint targeting the Neo4j Aura service attachment."
+  labels                  = var.common_labels
 }
 
 data "google_compute_forwarding_rule" "existing_psc" {

@@ -35,6 +35,11 @@ psc_ip_name              = "neo4j-psc-ip"
 psc_endpoint_name        = "neo4j-psc-endpoint"
 dns_response_policy_name = "neo4j-psc-rpz"
 
+# Optional. Enable only when clients in other regions of the same VPC must
+# reach this regional PSC endpoint and the producer service supports global
+# access. Same-region deployments should normally leave this false.
+allow_psc_global_access = false
+
 # ---------------------------------------------------------------------------
 # Per-resource create/reuse toggles. Defaults all create. Flip a toggle to
 # false and set the matching existing_*_name to attach to a pre-existing

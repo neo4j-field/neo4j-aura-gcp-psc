@@ -20,3 +20,4 @@ appear in the guide.
 | `10-gcp-connectivity-test-result.jpg`         | 6    | Connectivity Test results: 50/50 packets delivered, reachable forward and return, trace through the PSC forwarding rule. |
 | `11-neo4j-browser-connect.png`                | 7    | Neo4j Browser on the Windows VM, connecting to the instance via the private URI `neo4j+s://<dbid>.production-orch-NNNN.neo4j.io`. |
 | `12-neo4j-browser-show-databases.png`         | 7    | `SHOW DATABASES` results: cluster node addresses of the form `p-<dbid>-<shard>.production-orch-NNNN.neo4j.io:7687`, end-to-end proof that Bolt routing traverses PSC. |
+| `13-cisco-secure-hub-architecture.png`        | Extension | Secure Hub architecture pattern: client VPCs route through a security services VPC that owns DNS controls and the PSC consumer endpoint for Neo4j Aura. |
