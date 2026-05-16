@@ -52,6 +52,7 @@ module "psc_endpoint" {
   existing_psc_endpoint_name = var.existing_psc_endpoint_name
   psc_endpoint_name          = var.psc_endpoint_name
   neo4j_service_attachment   = var.neo4j_service_attachment
+  allow_psc_global_access    = var.allow_psc_global_access
   common_labels              = local.common_labels
 }
 

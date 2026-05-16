@@ -128,6 +128,12 @@ variable "existing_psc_endpoint_name" {
   default     = ""
 }
 
+variable "allow_psc_global_access" {
+  description = "When true, clients in other regions of the same VPC can reach the PSC endpoint. Leave false unless the architecture requires cross-region access and the producer service supports it."
+  type        = bool
+  default     = false
+}
+
 # ---------------------------------------------------------------------------
 # Cloud DNS response policy. A single VPC can hold only one response policy
 # per network attachment, so when running this module against a VPC that

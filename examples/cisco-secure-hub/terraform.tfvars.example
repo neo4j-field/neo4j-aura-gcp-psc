@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# Cisco Secure Hub extension example.
+#
+# Copy to ../../terraform.tfvars and replace all placeholder values.
+# terraform.tfvars is gitignored; do not commit environment-specific values.
+# ---------------------------------------------------------------------------
+
+# The GCP project that owns the Secure Hub or PSC services VPC. This is the
+# project ID to add in the Aura network access wizard.
+consumer_project_id = "customer-secure-hub-prod"
+
+# Match the Aura producer region whenever possible. For multi-region Aura VDC,
+# run the module once per region with unique endpoint/IP/DNS rule names.
+consumer_region = "us-east4"
+consumer_zone   = "us-east4-a"
+
+# Reuse the existing Secure Hub or common services VPC. The Terraform module
+# creates only the PSC endpoint and DNS response policy resources.
+create_network        = false
+existing_network_name = "cisco-secure-hub-vpc"
+existing_subnet_name  = "psc-services-us-east4"
+
+# Values copied from Aura Console > Network access > Private endpoints.
+neo4j_service_attachment = "https://www.googleapis.com/compute/v1/projects/<neo4j-producer-project>/regions/us-east4/serviceAttachments/<aura-service-attachment>"
+neo4j_orch_dns_name      = "production-orch-NNNN.neo4j.io"
+
+# Use explicit names that encode product, environment, and region.
+psc_ip_name              = "neo4j-aura-prod-us-east4-psc-ip"
+psc_endpoint_name        = "neo4j-aura-prod-us-east4-psc-endpoint"
+dns_response_policy_name = "neo4j-aura-prod-us-east4-rpz"
+
+# Enable only when same-VPC clients in other regions need this endpoint and the
+# producer supports PSC global access. This does not replace NCC propagation or
+# cross-VPC route design.
+allow_psc_global_access = true
+
+# If a single response policy already exists in the Secure Hub VPC, reuse it
+# and keep rule names unique per Aura region/instance family.
+# create_dns_response_policy        = false
+# existing_dns_response_policy_name = "central-private-rpz"
+# dns_apex_rule_name                = "neo4j-aura-prod-us-east4-apex"
+# dns_wildcard_rule_name            = "neo4j-aura-prod-us-east4-wildcard"
+
+extra_labels = {
+  environment = "prod"
+  owner       = "platform-networking"
+  pattern     = "cisco-secure-hub"
+  service     = "neo4j-aura"
+}

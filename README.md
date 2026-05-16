@@ -31,6 +31,10 @@ PSC forwarding rule, a Cloud DNS response policy, and two response-policy
 rules (apex and wildcard). Test VMs are intentionally out of scope:
 validate the path with the GCP Connectivity Test or your own client.
 
+Need to route Aura traffic through a centralized Cisco Secure Hub or security
+services VPC? See the additive extension guide:
+[Cisco Secure Hub extension for Neo4j Aura on GCP PSC](docs/cisco-secure-hub.md).
+
 ---
 
 ## Before you begin
@@ -367,6 +371,10 @@ consumer_zone   = "us-central1-a"
 create_network        = false
 existing_network_name = "default"
 existing_subnet_name  = "default"
+
+# Optional. Enable only when clients in other regions of the same VPC must
+# reach this regional PSC endpoint and the producer service supports it.
+allow_psc_global_access = false
 ```
 
 ### 3.4 Reusing pre-existing resources (optional)
@@ -565,6 +573,10 @@ neo4j-aura-gcp-psc/
 - **Static internal IP for the PSC endpoint.** The IP is the DNS answer;
   reserving it keeps the DNS record stable across forwarding rule
   recreations.
+- **PSC global access is opt-in.** Same-region clients do not need it.
+  Set `allow_psc_global_access = true` only when cross-region clients in
+  the same VPC must reach this endpoint and the producer service supports
+  global access.
 - **Test VMs intentionally out of scope.** Validation runs against the
   GCP Connectivity Test (Step 6) or against your own client; the
   Terraform stops at the PSC and DNS plumbing.

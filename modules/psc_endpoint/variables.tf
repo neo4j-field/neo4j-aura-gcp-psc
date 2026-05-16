@@ -59,6 +59,12 @@ variable "neo4j_service_attachment" {
   type        = string
 }
 
+variable "allow_psc_global_access" {
+  description = "When true, clients in other regions of the same VPC can reach the PSC endpoint. Requires producer support for PSC global access."
+  type        = bool
+  default     = false
+}
+
 variable "common_labels" {
   description = "Labels applied to resources that support labels."
   type        = map(string)
