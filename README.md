@@ -513,6 +513,18 @@ Re-enable it from the wizard to recover if that happens.
 
 ---
 
+## What's next: access after public traffic is disabled
+
+Once public traffic is off, two categories of access break that the initial setup
+does not cover. Both have dedicated guides in this repo:
+
+| Scenario | Guide |
+| -------- | ----- |
+| **Developer on a laptop** wants to use Neo4j Desktop or a browser (Chrome, Firefox) to reach the private instance | [`docs/developer-desktop-access.md`](docs/developer-desktop-access.md) |
+| **Batch jobs or pipelines** running in a different VPC (or a different GCP project) fail because their DNS does not resolve through the consumer VPC's response policy | [`docs/batch-jobs-other-vpcs.md`](docs/batch-jobs-other-vpcs.md) |
+
+---
+
 ## Clean up
 
 ```bash
@@ -538,7 +550,11 @@ neo4j-aura-gcp-psc/
 ├── modules/
 │   ├── networking/              VPC + subnet + firewall, or data-source lookup
 │   ├── psc_endpoint/            static IP + PSC forwarding rule (each independently create-or-reuse)
-│   └── dns/                     response policy (create-or-reuse) + apex and wildcard A records
+│   ├── dns/                     response policy (create-or-reuse) + apex and wildcard A records
+│   └── bastion/                 IAP-accessible bastion VM for developer desktop access
+├── docs/
+│   ├── developer-desktop-access.md   access Neo4j Desktop / browsers after public traffic disabled
+│   └── batch-jobs-other-vpcs.md      PSC endpoints for batch jobs in other VPCs or projects
 ├── prompts/                     design brief, iteration notes, final spec
 └── screenshots/                 images referenced in this guide
 ```
