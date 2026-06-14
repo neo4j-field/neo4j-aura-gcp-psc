@@ -2,21 +2,21 @@
 
 ---
 
-## Start here: use what your organisation already uses
+## Start here: use what your organization already uses
 
 Before reading the rest of this guide, ask your network, infrastructure, or
 security team one question:
 
 > **"How do developers in other teams access private resources in GCP today?"**
 
-Most organisations that run workloads in GCP already have an approved, audited
+Most organizations that run workloads in GCP already have an approved, audited
 method for private access — a corporate VPN, a jump host pattern, an IAP policy,
 or a Cloud VPN connection from the office network. If that method exists, use it.
 Connect Neo4j Desktop or your browser the same way those teams connect to their
 databases and internal APIs. There is no need to introduce new tooling, and doing
-so may conflict with your organisation's security policy or approved-software list.
+so may conflict with your organization's security policy or approved-software list.
 
-Common patterns already in use at organisations that run GCP:
+Common patterns already in use at organizations that run GCP:
 
 | If your teams currently use… | Do the same for Neo4j |
 |------------------------------|-----------------------|
@@ -25,7 +25,7 @@ Common patterns already in use at organisations that run GCP:
 | Cloud VPN from an office or data centre | The Neo4j PSC endpoint is reachable from any VM in the consumer VPC — your laptop, connected to the office network over Cloud VPN, can reach it |
 | Nothing yet — this is the first private GCP workload | Use Option A (IAP tunnel) below; it is the GCP-native recommendation and requires no additional approved software beyond `gcloud` |
 
-Only continue to the options below if your organisation does not already have a
+Only continue to the options below if your organization does not already have a
 standard method, or if your security team has asked you to evaluate one of the
 documented patterns.
 
@@ -216,7 +216,7 @@ Remove the `/etc/hosts` line once the tunnel is closed.
 authenticates via Google / Workspace identity, produces audit trails in Cloud Audit
 Logs, and requires no open inbound ports on any VM.
 
-If your organisation's security policy explicitly requires a client VPN rather than
+If your organization's security policy explicitly requires a client VPN rather than
 an SSH tunnel — common in regulated industries such as financial services and
 insurance — use **OpenVPN** deployed on a GCE VM. OpenVPN is battle-tested (20+
 years), has FIPS 140-2 compliant implementations, and is widely accepted in
