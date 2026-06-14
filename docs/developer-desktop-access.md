@@ -187,24 +187,31 @@ Remove the `/etc/hosts` line once the tunnel is closed.
 
 ---
 
-## Option B — WireGuard VPN
+## Option B — OpenVPN on GCE (when a full VPN is a policy requirement)
 
-If you want transparent access (Neo4j Desktop connects normally without managing
-a tunnel window), deploy a WireGuard server in the consumer VPC. When your laptop
-connects, it joins the VPC's network and uses Cloud DNS, so the response policy
-applies automatically and every Neo4j tool works without `/etc/hosts` changes.
+**For most deployments, Option A (IAP tunnel) is the right answer.** GCP IAP
+authenticates via Google / Workspace identity, produces audit trails in Cloud Audit
+Logs, and requires no open inbound ports on any VM.
 
-WireGuard requires a VM with a public IP and one open UDP port. If your organisation's
-security policy prohibits both, use Option A instead.
+If your organisation's security policy explicitly requires a client VPN rather than
+an SSH tunnel — common in regulated industries such as financial services and
+insurance — use **OpenVPN** deployed on a GCE VM. OpenVPN is battle-tested (20+
+years), has FIPS 140-2 compliant implementations, and is widely accepted in
+regulated-industry approved-software lists.
+
+> **Note on WireGuard:** WireGuard was listed in an earlier version of this guide.
+> It has been removed. WireGuard lacks FIPS 140-2 certification, is relatively new
+> (mainlined in Linux 5.6, 2020), and is not yet on the approved-software lists of
+> most financial or insurance institutions. Use OpenVPN or the IAP tunnel instead.
 
 ### Architecture
 
 ```
-Your laptop (WireGuard client)
+Your laptop (OpenVPN client)
   │
-  │  WireGuard encrypted tunnel (UDP 51820)
+  │  OpenVPN tunnel (TCP/443 or UDP/1194)
   ▼
-WireGuard VM (public IP, inside consumer VPC)
+OpenVPN VM (public IP, consumer VPC)
   │  DNS: 169.254.169.254 (Cloud DNS, response policy applies)
   ▼
 PSC endpoint 10.x.x.x  →  Neo4j Aura VDC
@@ -212,66 +219,42 @@ PSC endpoint 10.x.x.x  →  Neo4j Aura VDC
 
 ### High-level steps
 
-1. **Deploy WireGuard VM.** A small VM (e2-micro or e2-small) in the consumer VPC
-   with a public IP and a firewall rule permitting UDP 51820 from your IP range.
-   Install WireGuard: `apt-get install wireguard`.
+For a production-grade setup, use **OpenVPN Access Server** (AS) from the GCP
+Marketplace — it provides a management UI, certificate management, and MFA
+integration:
 
-2. **Generate key pairs** on the server and on your laptop:
-   ```bash
-   wg genkey | tee server_private.key | wg pubkey > server_public.key
-   wg genkey | tee client_private.key | wg pubkey > client_public.key
-   ```
-
-3. **Configure the server** (`/etc/wireguard/wg0.conf`):
-   ```ini
-   [Interface]
-   Address    = 10.200.0.1/24
-   PrivateKey = <server_private_key>
-   ListenPort = 51820
-   # NAT so client traffic uses the VM's internal IP
-   PostUp   = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o ens4 -j MASQUERADE
-   PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o ens4 -j MASQUERADE
-
-   [Peer]
-   PublicKey  = <client_public_key>
-   AllowedIPs = 10.200.0.2/32
-   ```
-   Start: `systemctl enable --now wg-quick@wg0`
-
-4. **Configure your laptop** (`/etc/wireguard/wg0.conf` or WireGuard app):
-   ```ini
-   [Interface]
-   Address    = 10.200.0.2/24
-   PrivateKey = <client_private_key>
-   DNS        = 169.254.169.254
-
-   [Peer]
-   PublicKey  = <server_public_key>
-   Endpoint   = <wireguard_vm_public_ip>:51820
-   AllowedIPs = 10.0.0.0/8
-   ```
-   The `DNS = 169.254.169.254` line routes all DNS through Cloud DNS in the VPC,
-   so the response policy rewrites `<dbid>.<orch>.neo4j.io` to the PSC IP.
-
-5. **Connect**: `wg-quick up wg0` (or toggle in the WireGuard app). Open Neo4j
-   Desktop and connect with the private URI — no `/etc/hosts`, no tunnel window.
+1. **Deploy OpenVPN AS** from GCP Marketplace into the consumer VPC. Reserve a
+   static external IP and assign it to the instance.
+2. **Create a firewall rule** on the consumer VPC allowing UDP 1194 (or TCP 443)
+   from developer IP ranges to the OpenVPN VM, tagged `openvpn-server`.
+3. **Configure DNS** in the OpenVPN AS admin UI: set DNS server to
+   `169.254.169.254` so connected clients resolve via Cloud DNS and the response
+   policy override takes effect.
+4. **Issue client profiles** through the OpenVPN AS user portal. Developers install
+   the OpenVPN Connect client and import the profile.
+5. **Connect**: once the VPN is up, `<dbid>.<orch>.neo4j.io` resolves to the PSC
+   IP automatically. Neo4j Desktop and Chrome connect without any `/etc/hosts`
+   changes.
 
 ---
 
 ## Comparison
 
-| | Option A — IAP Tunnel | Option B — WireGuard |
-|-|----------------------|---------------------|
+| | Option A — IAP Tunnel | Option B — OpenVPN |
+|-|----------------------|--------------------|
 | Public IP on VM | No | Yes (one VM) |
-| Extra software on laptop | `gcloud` CLI only | WireGuard client |
+| Extra software on laptop | `gcloud` CLI only | OpenVPN Connect client |
 | DNS managed automatically | No (`/etc/hosts`) | Yes |
 | Survives laptop sleep | Tunnel drops, re-run command | Reconnects automatically |
-| Suitable for locked-down corp laptops | Yes | Depends on policy |
-| Cost | e2-micro (~$7/mo) | e2-micro (~$7/mo) |
+| MFA support | Via Google identity | Via OpenVPN AS MFA plugins |
+| FIPS 140-2 | Not applicable | ✅ Available with OpenVPN AS |
+| Regulatory acceptance (finance/insurance) | ✅ (Google IAP, audited) | ✅ (OpenVPN, audited) |
+| Suitable for locked-down corp laptops | ✅ Yes (`gcloud` is standard) | Depends on policy |
+| Cost | e2-micro (~$7/mo) | e2-micro + OpenVPN AS licence |
 
-For developer teams that connect frequently, WireGuard is significantly less friction
-day-to-day. For occasional use or where no public IPs are permitted, the IAP tunnel
-wins on security posture.
+**Option A is recommended for most teams.** Option B is the right choice when
+security policy explicitly mandates a VPN client and the IAP tunnel pattern has
+not been pre-approved.
 
 ---
 
@@ -283,4 +266,4 @@ wins on security posture.
 | Desktop shows "Couldn't connect" immediately | Tunnel not open or wrong port | Confirm the `gcloud` process is still running; check it is listening on 7687 with `lsof -i :7687` |
 | TLS certificate error in browser | `/etc/hosts` entry missing or wrong hostname | Confirm the hostname in `/etc/hosts` exactly matches the private URI |
 | `socat` not running on bastion | Startup script didn't finish | SSH into the bastion and run `systemctl status neo4j-proxy-*` |
-| WireGuard DNS does not override Neo4j hostname | DNS setting not applied | Run `scutil --dns` (macOS) or `resolvectl status` (Linux) to confirm `169.254.169.254` is the active DNS |
+| OpenVPN connected but Neo4j hostname resolves to public IP | DNS server not set to 169.254.169.254 in OpenVPN AS | In OpenVPN AS admin UI → VPN Settings → DNS: set to 169.254.169.254 and push to clients |
