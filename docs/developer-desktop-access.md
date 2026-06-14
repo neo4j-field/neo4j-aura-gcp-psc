@@ -1,10 +1,33 @@
 # Developer Desktop Access After Disabling Public Traffic
 
-Once you check **Disable public traffic** in the Aura wizard, every connection that
-does not arrive through the PSC tunnel is refused — including connections from developer
-laptops running Neo4j Desktop or a browser pointed at Neo4j Browser.
+---
 
-This guide shows two ways to restore that access without re-enabling public traffic.
+## Start here: use what your organisation already uses
+
+Before reading the rest of this guide, ask your network, infrastructure, or
+security team one question:
+
+> **"How do developers in other teams access private resources in GCP today?"**
+
+Most organisations that run workloads in GCP already have an approved, audited
+method for private access — a corporate VPN, a jump host pattern, an IAP policy,
+or a Cloud VPN connection from the office network. If that method exists, use it.
+Connect Neo4j Desktop or your browser the same way those teams connect to their
+databases and internal APIs. There is no need to introduce new tooling, and doing
+so may conflict with your organisation's security policy or approved-software list.
+
+Common patterns already in use at organisations that run GCP:
+
+| If your teams currently use… | Do the same for Neo4j |
+|------------------------------|-----------------------|
+| A corporate VPN (Cisco AnyConnect, Palo Alto GlobalProtect, Zscaler, etc.) that gives access to GCP private resources | Connect via the same VPN — once on it, Neo4j Desktop connects to the private URI directly |
+| A jump host / bastion VM accessed over SSH | SSH tunnel through that same bastion to the PSC endpoint IP (same pattern as Option A below) |
+| Cloud VPN from an office or data centre | The Neo4j PSC endpoint is reachable from any VM in the consumer VPC — your laptop, connected to the office network over Cloud VPN, can reach it |
+| Nothing yet — this is the first private GCP workload | Use Option A (IAP tunnel) below; it is the GCP-native recommendation and requires no additional approved software beyond `gcloud` |
+
+Only continue to the options below if your organisation does not already have a
+standard method, or if your security team has asked you to evaluate one of the
+documented patterns.
 
 ---
 
