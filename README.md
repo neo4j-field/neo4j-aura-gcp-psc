@@ -521,6 +521,7 @@ does not cover. Both have dedicated guides in this repo:
 | Scenario | Guide |
 | -------- | ----- |
 | **Developer on a laptop** wants to use Neo4j Desktop or a browser (Chrome, Firefox) to reach the private instance | [`docs/developer-desktop-access.md`](docs/developer-desktop-access.md) |
+| **Developer on a laptop** when the corporate private interconnect is off-limits and a GKE cluster is already running in the consumer VPC | [`docs/gke-developer-access.md`](docs/gke-developer-access.md) |
 | **Batch jobs or pipelines** running in a different VPC (or a different GCP project) fail because their DNS does not resolve through the consumer VPC's response policy | [`docs/batch-jobs-other-vpcs.md`](docs/batch-jobs-other-vpcs.md) |
 
 ---
@@ -554,6 +555,7 @@ neo4j-aura-gcp-psc/
 │   └── bastion/                 IAP-accessible bastion VM for developer desktop access
 ├── docs/
 │   ├── developer-desktop-access.md   access Neo4j Desktop / browsers after public traffic disabled
+│   ├── gke-developer-access.md       access via GKE cluster when corporate interconnect is off-limits
 │   └── batch-jobs-other-vpcs.md      PSC endpoints for batch jobs in other VPCs or projects
 ├── prompts/                     design brief, iteration notes, final spec
 └── screenshots/                 images referenced in this guide
